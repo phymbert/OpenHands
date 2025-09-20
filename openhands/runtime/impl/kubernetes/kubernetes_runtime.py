@@ -10,6 +10,7 @@ from kubernetes.client.models import (
     V1Container,
     V1ContainerPort,
     V1EnvVar,
+    V1EmptyDirVolumeSource,
     V1HTTPIngressPath,
     V1HTTPIngressRuleValue,
     V1Ingress,
@@ -741,6 +742,43 @@ class KubernetesRuntime(ActionExecutionClient):
                 ),
             )
         ]
+
+        if self._k8s_config.mount_tmp_empty_dir:
+            self.log('debug', 'Mounting /tmp as emptyDir volume per configuration')
+            volumes.append(
+                V1Volume(
+                    name='tmp-emptydir',
+                    empty_dir=V1EmptyDirVolumeSource(),
+                )
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name='tmp-emptydir',
+                    mount_path='/tmp',
+                )
+            )
+
+        if self._k8s_config.enable_memory_dshm_volume:
+            empty_dir_kwargs: dict[str, Any] = {'medium': 'Memory'}
+            size_limit = self._k8s_config.memory_dshm_volume_size_limit
+            if size_limit:
+                empty_dir_kwargs['size_limit'] = size_limit
+            message = 'Mounting /dev/shm as memory-backed emptyDir volume'
+            if size_limit:
+                message += f' with size limit {size_limit}'
+            self.log('debug', message)
+            volumes.append(
+                V1Volume(
+                    name='dshm-emptydir',
+                    empty_dir=V1EmptyDirVolumeSource(**empty_dir_kwargs),
+                )
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name='dshm-emptydir',
+                    mount_path='/dev/shm',
+                )
+            )
 
         # Prepare container ports
         container_ports = [
