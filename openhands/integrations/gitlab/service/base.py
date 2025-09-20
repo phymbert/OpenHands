@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
+from openhands.core.logger import openhands_logger as logger
 from openhands.integrations.protocols.http_client import HTTPClient
 from openhands.integrations.service_types import (
     BaseGitService,
@@ -26,6 +27,13 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
             latest_token = await self.get_latest_token()
             if latest_token:
                 self.token = latest_token
+
+        logger.debug(
+            '[%s] Constructing GitLab headers token_available=%s base_url=%s',
+            self.provider,
+            bool(self.token),
+            self.BASE_URL,
+        )
 
         return {
             'Authorization': f'Bearer {self.token.get_secret_value()}',
@@ -55,6 +63,11 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
 
                 # Handle token refresh if needed
                 if self.refresh and self._has_token_expired(response.status_code):
+                    logger.debug(
+                        '[%s] GitLab token expired during request to %s - refreshing',
+                        self.provider,
+                        url,
+                    )
                     await self.get_latest_token()
                     gitlab_headers = await self._get_headers()
                     response = await self.execute_request(
@@ -104,6 +117,18 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
                 # Add content type header for GraphQL
                 gitlab_headers['Content-Type'] = 'application/json'
 
+                variables_preview = self._sanitize_for_logging(variables)
+                query_preview = ' '.join(query.split())
+                if len(query_preview) > 500:
+                    query_preview = f'{query_preview[:500]}... [truncated]'
+                logger.debug(
+                    '[%s] Executing GitLab GraphQL query url=%s variables=%s query_preview=%s',
+                    self.provider,
+                    self.GRAPHQL_URL,
+                    variables_preview,
+                    query_preview,
+                )
+
                 payload = {
                     'query': query,
                     'variables': variables if variables is not None else {},
@@ -114,6 +139,11 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
                 )
 
                 if self.refresh and self._has_token_expired(response.status_code):
+                    logger.debug(
+                        '[%s] GitLab GraphQL token refresh triggered for %s',
+                        self.provider,
+                        self.GRAPHQL_URL,
+                    )
                     await self.get_latest_token()
                     gitlab_headers = await self._get_headers()
                     gitlab_headers['Content-Type'] = 'application/json'
@@ -129,7 +159,19 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
                     error_message = result['errors'][0].get(
                         'message', 'Unknown GraphQL error'
                     )
+                    logger.debug(
+                        '[%s] GitLab GraphQL query returned errors=%s',
+                        self.provider,
+                        result['errors'],
+                    )
                     raise UnknownException(f'GraphQL error: {error_message}')
+
+                logger.debug(
+                    '[%s] GitLab GraphQL query succeeded status=%s keys=%s',
+                    self.provider,
+                    response.status_code,
+                    list(result.keys()),
+                )
 
                 return result.get('data')
         except httpx.HTTPStatusError as e:
@@ -139,11 +181,18 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
 
     async def get_user(self) -> User:
         url = f'{self.BASE_URL}/user'
+        logger.debug('[%s] Fetching GitLab user info from %s', self.provider, url)
         response, _ = await self._make_request(url)
 
         # Use a default avatar URL if not provided
         # In some self-hosted GitLab instances, the avatar_url field may be returned as None.
         avatar_url = response.get('avatar_url') or ''
+
+        logger.debug(
+            '[%s] GitLab user info retrieved keys=%s',
+            self.provider,
+            list(response.keys()),
+        )
 
         return User(
             id=str(response.get('id', '')),
@@ -173,5 +222,12 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
                 project_id = repository.replace('/', '%2F')
         else:
             project_id = repository
+
+        logger.debug(
+            '[%s] Extracted GitLab project id repository=%s resolved=%s',
+            self.provider,
+            repository,
+            project_id,
+        )
 
         return project_id

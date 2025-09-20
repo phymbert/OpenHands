@@ -7,6 +7,8 @@ export const ProviderOptions = {
 
 export type Provider = keyof typeof ProviderOptions;
 
+export type BitbucketMode = "cloud" | "server";
+
 export const ArtifactoryRepositoryTypes = {
   pypi: "pypi",
   npm: "npm",
@@ -37,6 +39,12 @@ export const DEFAULT_ARTIFACTORY_CLI_INSTALL_URL = "https://getcli.jfrog.io";
 export type ProviderToken = {
   token: string;
   host: string | null;
+  bitbucket_mode?: BitbucketMode;
+};
+
+export type ProviderTokenSettings = {
+  host: string | null;
+  bitbucket_mode?: BitbucketMode;
 };
 
 export type MCPSSEServer = {
@@ -72,7 +80,7 @@ export type Settings = {
   CONFIRMATION_MODE: boolean;
   SECURITY_ANALYZER: string | null;
   REMOTE_RUNTIME_RESOURCE_FACTOR: number | null;
-  PROVIDER_TOKENS_SET: Partial<Record<Provider, string | null>>;
+  PROVIDER_TOKENS_SET: Partial<Record<Provider, ProviderTokenSettings | null>>;
   ENABLE_DEFAULT_CONDENSER: boolean;
   // Maximum number of events before the condenser runs
   CONDENSER_MAX_SIZE: number | null;
