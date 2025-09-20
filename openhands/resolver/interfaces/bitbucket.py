@@ -10,6 +10,7 @@ from openhands.resolver.interfaces.issue import (
     ReviewThread,
 )
 from openhands.resolver.utils import extract_issue_references
+from openhands.utils.http_session import httpx_verify_option
 
 
 class BitbucketIssueHandler(IssueHandlerInterface):
@@ -118,7 +119,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         """
         if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests/{issue_number}'
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
                 response = await client.get(url, headers=self.headers)
                 response.raise_for_status()
                 data = response.json()
@@ -135,7 +136,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             )
 
         url = f'{self._get_repo_api_base()}/issues/{issue_number}'
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
             response = await client.get(url, headers=self.headers)
             response.raise_for_status()
             data = response.json()

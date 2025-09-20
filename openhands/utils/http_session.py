@@ -23,6 +23,14 @@ _verify_certificates: bool = not _env_insecure_skip_verify()
 _client: httpx.Client | None = None
 
 
+def httpx_verify_option() -> ssl.SSLContext | bool:
+    """Return the verify option to pass when creating an HTTPX client."""
+
+    if _env_insecure_skip_verify():
+        return False
+    return ssl.create_default_context()
+
+
 def _build_client(verify: bool) -> httpx.Client:
     if verify:
         return httpx.Client(verify=ssl.create_default_context())

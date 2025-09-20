@@ -36,6 +36,7 @@ from openhands.integrations.service_types import (
 )
 from openhands.microagent.types import MicroagentContentResponse, MicroagentResponse
 from openhands.server.types import AppMode
+from openhands.utils.http_session import httpx_verify_option
 
 BitbucketMode = Literal['cloud', 'server']
 
@@ -201,7 +202,7 @@ class ProviderHandler:
                 provider,
                 bool(self.sid),
             )
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
                 resp = await client.get(
                     self.REFRESH_TOKEN_URL,
                     headers={
