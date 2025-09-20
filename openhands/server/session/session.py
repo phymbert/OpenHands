@@ -6,6 +6,7 @@ import socketio
 
 from openhands.controller.agent import Agent
 from openhands.core.config import OpenHandsConfig
+from openhands.core.config.artifactory_config import DEFAULT_JFROG_CLI_INSTALL_URL
 from openhands.core.config.condenser_config import (
     BrowserOutputCondenserConfig,
     CondenserPipelineConfig,
@@ -184,6 +185,12 @@ class WebSession:
         if settings.artifactory_host is not None:
             stripped_host = settings.artifactory_host.strip()
             self.config.artifactory.host = stripped_host or None
+
+        if settings.artifactory_cli_install_url is not None:
+            cli_url = settings.artifactory_cli_install_url.strip()
+            self.config.artifactory.cli_install_url = (
+                cli_url or DEFAULT_JFROG_CLI_INSTALL_URL
+            )
 
         if settings.artifactory_api_key is not None:
             api_key_value = settings.artifactory_api_key.get_secret_value().strip()

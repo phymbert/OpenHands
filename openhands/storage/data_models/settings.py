@@ -54,6 +54,7 @@ class Settings(BaseModel):
     git_user_name: str | None = None
     git_user_email: str | None = None
     artifactory_host: str | None = None
+    artifactory_cli_install_url: str | None = None
     artifactory_api_key: SecretStr | None = None
     artifactory_repositories: dict[ArtifactoryRepositoryType, str] = Field(
         default_factory=dict
@@ -132,6 +133,16 @@ class Settings(BaseModel):
         """Force invalidate secret store"""
         return {'provider_tokens': {}}
 
+    @field_validator('artifactory_cli_install_url', mode='before')
+    @classmethod
+    def normalize_artifactory_cli_install_url(
+        cls, value: str | None
+    ) -> str | None:
+        if value is None:
+            return None
+        trimmed = str(value).strip()
+        return trimmed or None
+
     @field_validator('artifactory_repositories', mode='before')
     @classmethod
     def normalize_artifactory_repositories(
@@ -149,13 +160,12 @@ class Settings(BaseModel):
             repo_value = str(value).strip()
             if not repo_value:
                 continue
-            try:
-                repo_type = (
-                    key
-                    if isinstance(key, ArtifactoryRepositoryType)
-                    else ArtifactoryRepositoryType(str(key))
-                )
-            except ValueError:
+            repo_type = (
+                key
+                if isinstance(key, ArtifactoryRepositoryType)
+                else ArtifactoryRepositoryType.from_string(str(key))
+            )
+            if repo_type is None:
                 continue
             normalized[repo_type] = repo_value
         return normalized
@@ -207,6 +217,7 @@ class Settings(BaseModel):
             search_api_key=app_config.search_api_key,
             max_budget_per_task=app_config.max_budget_per_task,
             artifactory_host=artifactory_config.host,
+            artifactory_cli_install_url=artifactory_config.cli_install_url_value(),
             artifactory_api_key=artifactory_config.api_key,
             artifactory_repositories=artifactory_config.repositories,
         )
@@ -225,6 +236,14 @@ class Settings(BaseModel):
 
         if config_settings.artifactory_host and not self.artifactory_host:
             self.artifactory_host = config_settings.artifactory_host
+
+        if (
+            config_settings.artifactory_cli_install_url
+            and not self.artifactory_cli_install_url
+        ):
+            self.artifactory_cli_install_url = (
+                config_settings.artifactory_cli_install_url
+            )
 
         if config_settings.artifactory_api_key:
             if not self.artifactory_api_key or not self.artifactory_api_key.get_secret_value().strip():

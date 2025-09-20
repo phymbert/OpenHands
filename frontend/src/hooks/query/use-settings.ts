@@ -38,6 +38,9 @@ const getSettingsQueryFn = async (): Promise<Settings> => {
     GIT_USER_EMAIL:
       apiSettings.git_user_email || DEFAULT_SETTINGS.GIT_USER_EMAIL,
     ARTIFACTORY_HOST: apiSettings.artifactory_host || "",
+    ARTIFACTORY_CLI_INSTALL_URL:
+      apiSettings.artifactory_cli_install_url ||
+      DEFAULT_SETTINGS.ARTIFACTORY_CLI_INSTALL_URL,
     ARTIFACTORY_API_KEY_SET: apiSettings.artifactory_api_key_set,
     ARTIFACTORY_REPOSITORIES:
       apiSettings.artifactory_repositories ??

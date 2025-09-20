@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from pydantic import SecretStr
 
+from openhands.core.config.artifactory_config import DEFAULT_JFROG_CLI_INSTALL_URL
 from openhands.core.config.llm_config import LLMConfig
 from openhands.core.config.openhands_config import OpenHandsConfig
 from openhands.core.config.sandbox_config import SandboxConfig
@@ -46,6 +47,10 @@ def test_settings_from_config():
         assert settings.llm_base_url == 'https://test.example.com'
         assert settings.remote_runtime_resource_factor == 2
         assert not settings.secrets_store.provider_tokens
+        assert (
+            settings.artifactory_cli_install_url
+            == DEFAULT_JFROG_CLI_INSTALL_URL
+        )
 
 
 def test_settings_from_config_no_api_key():
