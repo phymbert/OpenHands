@@ -382,11 +382,11 @@ def test_cli_args_none_uses_config_toml_values():
 
 
 def test_load_openhands_config_env_override(monkeypatch, tmp_path):
-    """The OPENHANDS_CONFIG_FILE env var overrides the default config file path."""
+    """The CONFIG_FILE env var overrides the default config file path."""
 
     env_config_file = tmp_path / 'env_config.toml'
     env_config_file.write_text('[core]\nmax_iterations = 123\n')
-    monkeypatch.setenv('OPENHANDS_CONFIG_FILE', str(env_config_file))
+    monkeypatch.setenv('CONFIG_FILE', str(env_config_file))
 
     config = load_openhands_config()
     assert config.max_iterations == 123

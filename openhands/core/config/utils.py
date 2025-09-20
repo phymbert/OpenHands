@@ -34,7 +34,7 @@ from openhands.storage.files import FileStore
 from openhands.utils.import_utils import get_impl
 
 JWT_SECRET = '.jwt_secret'
-CONFIG_FILE_ENV_VAR = 'OPENHANDS_CONFIG_FILE'
+CONFIG_FILE_ENV_VAR = 'CONFIG_FILE'
 load_dotenv()
 
 
