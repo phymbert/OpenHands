@@ -9,7 +9,7 @@ from pydantic import SecretStr
 
 from openhands.integrations.bitbucket.bitbucket_service import BitBucketService
 from openhands.integrations.provider import ProviderToken, ProviderType
-from openhands.integrations.service_types import OwnerType, Repository
+from openhands.integrations.service_types import OwnerType, Repository, RequestMethod
 from openhands.integrations.service_types import ProviderType as ServiceProviderType
 from openhands.integrations.utils import validate_provider_token
 from openhands.resolver.interfaces.bitbucket import BitbucketIssueHandler
@@ -20,6 +20,7 @@ from openhands.runtime.base import Runtime
 from openhands.server.routes.secrets import check_provider_tokens
 from openhands.server.settings import POSTProviderModel
 from openhands.server.types import AppMode
+from openhands.microagent.types import MicroagentContentResponse
 
 
 # BitbucketIssueHandler Tests
@@ -79,6 +80,302 @@ def test_init_server_mode():
         'https://bitbucket.example.com/projects/PROJ/repos/test-repo/pull-requests/42'
     )
     assert handler.headers['Authorization'].startswith('Basic ')
+
+
+@pytest.mark.asyncio
+async def test_server_get_branches_uses_rest_endpoint(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    fetch_mock = AsyncMock(
+        return_value=[
+            {
+                'displayId': 'main',
+                'latestCommit': 'abc123',
+                'metadata': {'last-modified': [{'authorTimestamp': 1700000000000}]},
+            }
+        ]
+    )
+    monkeypatch.setattr(service, '_fetch_paginated_data', fetch_mock)
+
+    branches = await service.get_branches('PROJ/repo')
+
+    fetch_mock.assert_awaited_once()
+    called_url, params, max_items = fetch_mock.call_args[0]
+    assert (
+        called_url
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/branches'
+    )
+    assert params['limit'] == 100
+    assert params['orderBy'] == 'MODIFICATION'
+    assert max_items == 1000
+    assert branches[0].name == 'main'
+    assert branches[0].commit_sha == 'abc123'
+    assert branches[0].last_push_date == '2023-11-14T22:13:20+00:00'
+
+
+@pytest.mark.asyncio
+async def test_server_get_paginated_branches(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    response = {
+        'values': [{'displayId': 'feature', 'latestCommit': 'def456'}],
+        'isLastPage': False,
+        'size': 40,
+    }
+    make_request = AsyncMock(return_value=(response, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    result = await service.get_paginated_branches('PROJ/repo', page=2, per_page=20)
+
+    make_request.assert_awaited_once()
+    called_url, params = make_request.call_args[0]
+    assert (
+        called_url
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/branches'
+    )
+    assert params['start'] == 20
+    assert params['limit'] == 20
+    assert params['orderBy'] == 'MODIFICATION'
+    assert result.has_next_page is True
+    assert result.total_count == 40
+    assert result.branches[0].name == 'feature'
+    assert result.branches[0].commit_sha == 'def456'
+
+
+@pytest.mark.asyncio
+async def test_server_search_branches(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    response = {
+        'values': [{'displayId': 'bugfix', 'latestCommit': 'abc999'}],
+    }
+    make_request = AsyncMock(return_value=(response, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    branches = await service.search_branches('PROJ/repo', query='bug', per_page=50)
+
+    make_request.assert_awaited_once()
+    called_url, params = make_request.call_args[0]
+    assert (
+        called_url
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/branches'
+    )
+    assert params['filterText'] == 'bug'
+    assert params['limit'] == 50
+    assert params['orderBy'] == 'MODIFICATION'
+    assert branches[0].name == 'bugfix'
+    assert branches[0].commit_sha == 'abc999'
+
+
+@pytest.mark.asyncio
+async def test_cloud_create_pr_uses_v2_endpoint(monkeypatch):
+    service = BitBucketService(token=SecretStr('token'))
+
+    response = {
+        'links': {
+            'html': {
+                'href': 'https://bitbucket.org/workspace/repo/pull-requests/42'
+            }
+        }
+    }
+    make_request = AsyncMock(return_value=(response, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    pr_url = await service.create_pr(
+        'workspace/repo', 'feature', 'main', 'Title', 'Body', draft=True
+    )
+
+    assert pr_url == 'https://bitbucket.org/workspace/repo/pull-requests/42'
+    call_kwargs = make_request.call_args.kwargs
+    assert (
+        call_kwargs['url']
+        == 'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests'
+    )
+    assert call_kwargs['params']['source']['branch']['name'] == 'feature'
+    assert call_kwargs['params']['destination']['branch']['name'] == 'main'
+    assert call_kwargs['params']['draft'] is True
+    assert call_kwargs['method'] == RequestMethod.POST
+
+
+@pytest.mark.asyncio
+async def test_server_create_pr_uses_v1_endpoint(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    response = {
+        'links': {
+            'self': [
+                {
+                    'href': (
+                        'https://bitbucket.example.com/projects/PROJ/repos/repo/'
+                        'pull-requests/7'
+                    )
+                }
+            ]
+        }
+    }
+    make_request = AsyncMock(return_value=(response, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    pr_url = await service.create_pr(
+        'PROJ/repo', 'feature/server', 'main', 'Server Title', 'Body'
+    )
+
+    assert (
+        pr_url
+        == 'https://bitbucket.example.com/projects/PROJ/repos/repo/pull-requests/7'
+    )
+    call_kwargs = make_request.call_args.kwargs
+    assert (
+        call_kwargs['url']
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/pull-requests'
+    )
+    assert call_kwargs['params']['fromRef']['id'] == 'refs/heads/feature/server'
+    assert call_kwargs['params']['toRef']['id'] == 'refs/heads/main'
+    assert call_kwargs['method'] == RequestMethod.POST
+
+
+@pytest.mark.asyncio
+async def test_server_get_pr_details_uses_v1_endpoint(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    make_request = AsyncMock(return_value=({'id': 1}, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    await service.get_pr_details('PROJ/repo', 12)
+
+    call_args = make_request.call_args
+    assert (
+        call_args.args[0]
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/pull-requests/12'
+    )
+
+
+@pytest.mark.asyncio
+async def test_cloud_get_pr_details_uses_v2_endpoint(monkeypatch):
+    service = BitBucketService(token=SecretStr('token'))
+
+    make_request = AsyncMock(return_value=({'id': 1}, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    await service.get_pr_details('workspace/repo', 5)
+
+    call_args = make_request.call_args
+    assert (
+        call_args.args[0]
+        == 'https://api.bitbucket.org/2.0/repositories/workspace/repo/pullrequests/5'
+    )
+
+
+@pytest.mark.asyncio
+async def test_server_microagent_content_uses_browse_endpoint(monkeypatch):
+    service = BitBucketService(
+        user_id='user',
+        token=SecretStr('user:pass'),
+        base_domain='bitbucket.example.com',
+        bitbucket_mode='server',
+    )
+
+    repo_details = Repository(
+        id='1',
+        full_name='PROJ/repo',
+        git_provider=ServiceProviderType.BITBUCKET,
+        is_public=False,
+        owner_type=OwnerType.ORGANIZATION,
+        main_branch='main',
+    )
+    monkeypatch.setattr(
+        service,
+        'get_repository_details_from_repo_name',
+        AsyncMock(return_value=repo_details),
+    )
+
+    response = {'lines': [{'text': 'line1'}, {'text': 'line2'}]}
+    make_request = AsyncMock(return_value=(response, {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    expected_content = MicroagentContentResponse(
+        content='parsed', path='microagents/file.md', triggers=[]
+    )
+    parse_mock = MagicMock(return_value=expected_content)
+    monkeypatch.setattr(service, '_parse_microagent_content', parse_mock)
+
+    result = await service.get_microagent_content('PROJ/repo', 'microagents/file.md')
+
+    call_args = make_request.call_args
+    assert (
+        call_args.args[0]
+        == 'https://bitbucket.example.com/rest/api/1.0/projects/PROJ/repos/repo/browse/microagents/file.md'
+    )
+    assert call_args.kwargs['params']['at'] == 'refs/heads/main'
+    parse_mock.assert_called_once_with('line1\nline2', 'microagents/file.md')
+    assert result is expected_content
+
+
+@pytest.mark.asyncio
+async def test_cloud_microagent_content_uses_src_endpoint(monkeypatch):
+    service = BitBucketService(token=SecretStr('token'))
+
+    repo_details = Repository(
+        id='1',
+        full_name='workspace/repo',
+        git_provider=ServiceProviderType.BITBUCKET,
+        is_public=True,
+        owner_type=OwnerType.ORGANIZATION,
+        main_branch='main',
+    )
+    monkeypatch.setattr(
+        service,
+        'get_repository_details_from_repo_name',
+        AsyncMock(return_value=repo_details),
+    )
+
+    make_request = AsyncMock(return_value=('raw-content', {}))
+    monkeypatch.setattr(service, '_make_request', make_request)
+
+    expected_content = MicroagentContentResponse(
+        content='parsed', path='.openhands/microagents/file.md', triggers=[]
+    )
+    parse_mock = MagicMock(return_value=expected_content)
+    monkeypatch.setattr(service, '_parse_microagent_content', parse_mock)
+
+    result = await service.get_microagent_content(
+        'workspace/repo', '.openhands/microagents/file.md'
+    )
+
+    call_args = make_request.call_args
+    assert (
+        call_args.args[0]
+        == 'https://api.bitbucket.org/2.0/repositories/workspace/repo/src/main/.openhands/microagents/file.md'
+    )
+    parse_mock.assert_called_once_with(
+        'raw-content', '.openhands/microagents/file.md'
+    )
+    assert result is expected_content
 
 
 def test_get_repo_url(bitbucket_handler):
