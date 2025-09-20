@@ -489,6 +489,21 @@ type = "noop"
 # Run the runtime sandbox container in privileged mode for use with docker-in-docker
 #privileged = false
 
+# Allow processes in the runtime sandbox container to escalate privileges
+#allow_privilege_escalation = false
+
+# Mount the runtime sandbox container root filesystem as read-only
+#read_only_root_filesystem = false
+
+# Require the runtime sandbox container to run as a non-root user
+#run_as_non_root = true
+
+# Override the user ID used for the runtime sandbox container
+#run_as_user = 1000
+
+# Override the primary group ID used for the runtime sandbox container
+#run_as_group = 1000
+
 #################################### Model Routing ############################
 # Configuration for experimental model routing feature
 # Enables intelligent switching between different LLM models for specific purposes
