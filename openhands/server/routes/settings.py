@@ -1,12 +1,17 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
 
+from openhands.core.config.artifactory_config import ArtifactoryRepositoryType
 from openhands.core.logger import openhands_logger as logger
 from openhands.integrations.provider import (
     PROVIDER_TOKEN_TYPE,
     ProviderType,
 )
 from openhands.server.dependencies import get_dependencies
+from openhands.integrations.artifactory.client import (
+    ArtifactoryAPIError,
+    ArtifactoryClient,
+)
 from openhands.server.routes.secrets import invalidate_legacy_secrets_store
 from openhands.server.settings import GETSettingsModel, ProviderTokenSettings
 from openhands.server.shared import config
@@ -21,6 +26,26 @@ from openhands.storage.secrets.secrets_store import SecretsStore
 from openhands.storage.settings.settings_store import SettingsStore
 
 app = APIRouter(prefix='/api', dependencies=get_dependencies())
+
+
+def _resolve_artifactory_credentials(settings: Settings) -> tuple[str | None, str | None]:
+    host = settings.artifactory_host.strip() if settings.artifactory_host else ''
+    if not host and config.artifactory.host:
+        host = config.artifactory.host.strip()
+
+    api_key: str | None = None
+    if settings.artifactory_api_key:
+        value = settings.artifactory_api_key.get_secret_value().strip()
+        if value:
+            api_key = value
+    if not api_key and config.artifactory.api_key:
+        value = config.artifactory.api_key.get_secret_value()
+        if value:
+            value = value.strip()
+            if value:
+                api_key = value
+
+    return host or None, api_key or None
 
 
 @app.get(
@@ -73,11 +98,16 @@ async def load_settings(
             and bool(settings.llm_api_key),
             search_api_key_set=settings.search_api_key is not None
             and bool(settings.search_api_key),
+            artifactory_api_key_set=(
+                settings.artifactory_api_key is not None
+                and bool(settings.artifactory_api_key.get_secret_value().strip())
+            ),
             provider_tokens_set=provider_tokens_set,
         )
         settings_with_token_data.llm_api_key = None
         settings_with_token_data.search_api_key = None
         settings_with_token_data.sandbox_api_key = None
+        settings_with_token_data.artifactory_api_key = None
         return settings_with_token_data
     except Exception as e:
         logger.warning(f'Invalid token: {e}')
@@ -90,6 +120,80 @@ async def load_settings(
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={'error': 'Invalid token'},
         )
+
+
+@app.get(
+    '/settings/artifactory/repository-types',
+    response_model=list[str],
+    responses={
+        500: {'description': 'Failed to query Artifactory', 'model': dict},
+    },
+)
+async def get_artifactory_repository_types(
+    settings: Settings = Depends(get_user_settings),
+) -> list[str]:
+    host, api_key = _resolve_artifactory_credentials(settings)
+    default_types = [repo_type.value for repo_type in ArtifactoryRepositoryType]
+
+    if not host or not api_key:
+        return default_types
+
+    try:
+        client = ArtifactoryClient(host=host, api_key=api_key)
+        repository_types = client.list_supported_repository_types()
+        if repository_types:
+            return [repo_type.value for repo_type in repository_types]
+    except ArtifactoryAPIError as exc:
+        logger.warning(
+            'Failed to fetch Artifactory repository types: %s',
+            exc,
+            exc_info=True,
+        )
+
+    return default_types
+
+
+@app.get(
+    '/settings/artifactory/repositories/search',
+    response_model=list[str],
+    responses={
+        500: {'description': 'Failed to query Artifactory', 'model': dict},
+    },
+)
+async def search_artifactory_repositories(
+    query: str = Query(..., min_length=1, description='Search term for repositories'),
+    repository_type: str | None = Query(
+        default=None,
+        alias='type',
+        description='Optional Artifactory repository package type filter',
+    ),
+    limit: int = Query(
+        default=20,
+        ge=1,
+        le=100,
+        description='Maximum number of repositories to return',
+    ),
+    settings: Settings = Depends(get_user_settings),
+) -> list[str]:
+    host, api_key = _resolve_artifactory_credentials(settings)
+    if not host or not api_key:
+        return []
+
+    try:
+        client = ArtifactoryClient(host=host, api_key=api_key)
+        repositories = client.search_repositories(
+            query=query,
+            repository_type=repository_type,
+            limit=limit,
+        )
+        return repositories
+    except ArtifactoryAPIError as exc:
+        logger.warning(
+            'Failed to search Artifactory repositories: %s',
+            exc,
+            exc_info=True,
+        )
+        return []
 
 
 @app.post(
@@ -127,6 +231,33 @@ async def store_llm_settings(
         # Keep existing search API key if not provided
         if settings.search_api_key is None:
             settings.search_api_key = existing_settings.search_api_key
+
+        if (
+            settings.artifactory_host is None
+            and 'artifactory_host' not in settings.model_fields_set
+        ):
+            settings.artifactory_host = existing_settings.artifactory_host
+
+        if (
+            settings.artifactory_cli_install_url is None
+            and 'artifactory_cli_install_url' not in settings.model_fields_set
+        ):
+            settings.artifactory_cli_install_url = (
+                existing_settings.artifactory_cli_install_url
+            )
+
+        if (
+            settings.artifactory_api_key is None
+            and 'artifactory_api_key' not in settings.model_fields_set
+        ):
+            settings.artifactory_api_key = existing_settings.artifactory_api_key
+
+        if 'artifactory_repositories' not in settings.model_fields_set:
+            settings.artifactory_repositories = (
+                existing_settings.artifactory_repositories.copy()
+                if existing_settings.artifactory_repositories
+                else {}
+            )
 
     return settings
 
@@ -210,6 +341,9 @@ def convert_to_settings(settings_with_token_data: Settings) -> Settings:
     # Convert the API keys to `SecretStr` instances
     filtered_settings_data['llm_api_key'] = settings_with_token_data.llm_api_key
     filtered_settings_data['search_api_key'] = settings_with_token_data.search_api_key
+    filtered_settings_data[
+        'artifactory_api_key'
+    ] = settings_with_token_data.artifactory_api_key
 
     # Create a new Settings instance
     settings = Settings(**filtered_settings_data)

@@ -10,6 +10,7 @@ from openhands.core.config.config_utils import (
     OH_MAX_ITERATIONS,
     get_field_info,
 )
+from openhands.core.config.artifactory_config import ArtifactoryConfig
 from openhands.core.config.extended_config import ExtendedConfig
 from openhands.core.config.llm_config import LLMConfig
 from openhands.core.config.mcp_config import MCPConfig
@@ -42,6 +43,7 @@ __all__ = [
     'SecurityConfig',
     'ModelRoutingConfig',
     'ExtendedConfig',
+    'ArtifactoryConfig',
     'load_openhands_config',
     'load_from_env',
     'load_from_toml',

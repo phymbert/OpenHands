@@ -1,4 +1,8 @@
-import { Provider, ProviderTokenSettings } from "#/types/settings";
+import {
+  ArtifactoryRepositoryType,
+  Provider,
+  ProviderTokenSettings,
+} from "#/types/settings";
 
 export type ApiSettings = {
   llm_model: string;
@@ -21,6 +25,10 @@ export type ApiSettings = {
   search_api_key?: string;
   provider_tokens_set: Partial<Record<Provider, ProviderTokenSettings | null>>;
   max_budget_per_task: number | null;
+  artifactory_host: string | null;
+  artifactory_cli_install_url: string | null;
+  artifactory_api_key_set: boolean;
+  artifactory_repositories: Partial<Record<ArtifactoryRepositoryType, string>>;
   mcp_config?: {
     sse_servers: (string | { url: string; api_key?: string })[];
     stdio_servers: {
@@ -40,6 +48,10 @@ export type ApiSettings = {
 export type PostApiSettings = ApiSettings & {
   user_consents_to_analytics: boolean | null;
   search_api_key?: string;
+  artifactory_host?: string | null;
+  artifactory_cli_install_url?: string | null;
+  artifactory_api_key?: string;
+  artifactory_repositories?: Partial<Record<ArtifactoryRepositoryType, string>>;
   mcp_config?: {
     sse_servers: (string | { url: string; api_key?: string })[];
     stdio_servers: {

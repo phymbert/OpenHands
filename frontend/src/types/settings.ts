@@ -9,6 +9,33 @@ export type Provider = keyof typeof ProviderOptions;
 
 export type BitbucketMode = "cloud" | "server";
 
+export const ArtifactoryRepositoryTypes = {
+  pypi: "pypi",
+  npm: "npm",
+  maven: "maven",
+  gradle: "gradle",
+  go: "go",
+  nuget: "nuget",
+  docker: "docker",
+  helm: "helm",
+  terraform: "terraform",
+  conan: "conan",
+  cargo: "cargo",
+  composer: "composer",
+  gems: "gems",
+  cocoapods: "cocoapods",
+  cran: "cran",
+  pub: "pub",
+  sbt: "sbt",
+  ivy: "ivy",
+  swift: "swift",
+  bower: "bower",
+} as const;
+
+export type ArtifactoryRepositoryType = keyof typeof ArtifactoryRepositoryTypes;
+
+export const DEFAULT_ARTIFACTORY_CLI_INSTALL_URL = "https://getcli.jfrog.io";
+
 export type ProviderToken = {
   token: string;
   host: string | null;
@@ -69,6 +96,10 @@ export type Settings = {
   EMAIL_VERIFIED?: boolean;
   GIT_USER_NAME?: string;
   GIT_USER_EMAIL?: string;
+  ARTIFACTORY_HOST?: string;
+  ARTIFACTORY_CLI_INSTALL_URL?: string;
+  ARTIFACTORY_API_KEY_SET?: boolean;
+  ARTIFACTORY_REPOSITORIES: Partial<Record<ArtifactoryRepositoryType, string>>;
 };
 
 export type PostSettings = Settings & {
@@ -76,4 +107,6 @@ export type PostSettings = Settings & {
   llm_api_key?: string | null;
   search_api_key?: string;
   mcp_config?: MCPConfig;
+  artifactory_api_key?: string | null;
+  artifactory_cli_install_url?: string | null;
 };

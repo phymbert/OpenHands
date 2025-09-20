@@ -22,6 +22,7 @@ from openhands.core.config.condenser_config import (
     condenser_config_from_toml_section,
     create_condenser_config,
 )
+from openhands.core.config.artifactory_config import ArtifactoryConfig
 from openhands.core.config.extended_config import ExtendedConfig
 from openhands.core.config.kubernetes_config import KubernetesConfig
 from openhands.core.config.llm_config import LLMConfig
@@ -190,6 +191,18 @@ def load_from_toml(cfg: OpenHandsConfig, toml_file: str = 'config.toml') -> None
         else:
             logger.openhands_logger.warning(
                 f'Unknown config key "{key}" in [core] section'
+            )
+
+    if 'artifactory' in toml_config:
+        try:
+            cfg.artifactory = ArtifactoryConfig.model_validate(
+                toml_config['artifactory']
+            )
+        except ValidationError as e:
+            logger.openhands_logger.warning(
+                'Cannot parse [artifactory] config from toml, '
+                'values have not been applied.\n'
+                f'Error: {e}'
             )
 
     # Process agent section if present
@@ -848,18 +861,17 @@ def load_openhands_config(
             config_as_toml = toml.dumps(
                 config.model_dump(mode='json', exclude_none=True)
             ).strip()
-        except (TypeError, ValueError) as exc:
-            logger.openhands_logger.debug(
-                'Failed to serialize configuration to TOML for debug logging: %s',
-                exc,
-            )
-        else:
             global _last_logged_config_toml
             if _last_logged_config_toml != config_as_toml:
                 logger.openhands_logger.debug(
                     'Loaded OpenHands configuration (TOML):\n%s', config_as_toml
                 )
                 _last_logged_config_toml = config_as_toml
+        except (TypeError, ValueError) as exc:
+            logger.openhands_logger.debug(
+                'Failed to serialize configuration to TOML for debug logging: %s',
+                exc,
+            )
     return config
 
 

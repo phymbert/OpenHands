@@ -35,6 +35,16 @@ const saveSettingsMutationFn = async (settings: Partial<PostSettings>) => {
       settings.GIT_USER_NAME?.trim() || DEFAULT_SETTINGS.GIT_USER_NAME,
     git_user_email:
       settings.GIT_USER_EMAIL?.trim() || DEFAULT_SETTINGS.GIT_USER_EMAIL,
+    artifactory_host: settings.ARTIFACTORY_HOST?.trim() || "",
+    artifactory_cli_install_url:
+      settings.ARTIFACTORY_CLI_INSTALL_URL !== undefined
+        ? settings.ARTIFACTORY_CLI_INSTALL_URL.trim()
+        : undefined,
+    artifactory_repositories: settings.ARTIFACTORY_REPOSITORIES,
+    artifactory_api_key:
+      settings.artifactory_api_key === ""
+        ? ""
+        : settings.artifactory_api_key?.trim() || undefined,
   };
 
   await SettingsService.saveSettings(apiSettings);

@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import random
+import shlex
 import shutil
 import string
 import tempfile
@@ -16,6 +17,7 @@ from zipfile import ZipFile
 import httpx
 
 from openhands.core.config import OpenHandsConfig, SandboxConfig
+from openhands.core.config.artifactory_config import DEFAULT_JFROG_CLI_INSTALL_URL
 from openhands.core.config.mcp_config import MCPConfig, MCPStdioServerConfig
 from openhands.core.exceptions import (
     AgentRuntimeDisconnectedError,
@@ -218,6 +220,7 @@ class Runtime(FileEditRuntimeMixin):
 
         # Configure git settings
         self._setup_git_config()
+        self._configure_artifactory()
 
     def close(self) -> None:
         """This should only be called by conversation manager or closing the session.
@@ -1028,6 +1031,121 @@ fi
                 )
         except Exception as e:
             logger.warning(f'Failed to execute git config command: {cmd}, error: {e}')
+
+    def _run_hidden_command(self, command: str) -> CmdOutputObservation:
+        """Execute a command without exposing sensitive data to the event stream."""
+
+        observation = self.run(
+            CmdRunAction(command=command, hidden=True, is_static=True)
+        )
+        if (
+            not isinstance(observation, CmdOutputObservation)
+            or observation.exit_code != 0
+        ):
+            raise RuntimeError(
+                f'Command failed: {command} (exit code '
+                f'{getattr(observation, "exit_code", "unknown")})'
+            )
+        return observation
+
+    def _ensure_jfrog_cli_installed(self) -> None:
+        """Install jfrog CLI if it is not already available."""
+
+        check_observation = self.run(
+            CmdRunAction(command='command -v jfrog', hidden=True, is_static=True)
+        )
+        if (
+            isinstance(check_observation, CmdOutputObservation)
+            and check_observation.exit_code == 0
+        ):
+            return
+
+        artifactory_config = getattr(self.config, 'artifactory', None)
+        install_url = getattr(artifactory_config, 'cli_install_url_value', None)
+        if callable(install_url):
+            install_url = install_url()
+        elif artifactory_config and hasattr(artifactory_config, 'cli_install_url'):
+            raw_url = getattr(artifactory_config, 'cli_install_url', None)
+            install_url = (raw_url or '').strip()
+        else:
+            install_url = ''
+
+        normalized_install_url = install_url or DEFAULT_JFROG_CLI_INSTALL_URL
+
+        install_commands = [
+            f'curl -fL {shlex.quote(normalized_install_url)} | sh',
+            'if [ -f jfrog ]; then mv -f jfrog /usr/local/bin/jfrog; fi',
+            'if [ -f jfrog.exe ]; then mv -f jfrog.exe /usr/local/bin/jfrog; fi',
+            'chmod +x /usr/local/bin/jfrog || true',
+            'rm -f jfrog jfrog.exe',
+        ]
+
+        for command in install_commands:
+            self._run_hidden_command(command)
+
+    def _configure_jfrog_cli(self, artifactory_config) -> None:
+        host = artifactory_config.normalized_host()
+        api_key = artifactory_config.api_key_value()
+        if not host or not api_key:
+            raise ValueError('Incomplete Artifactory configuration')
+
+        server_id = artifactory_config.server_id
+        base_command = (
+            f'jfrog config add {shlex.quote(server_id)} --url={shlex.quote(host)} '
+            '--overwrite --interactive=false --apikey=${ARTIFACTORY_API_KEY}'
+        )
+        self._run_hidden_command(base_command)
+        self._run_hidden_command(f'jfrog config use {shlex.quote(server_id)}')
+
+        repo_commands = artifactory_config.repository_commands()
+        for command in repo_commands.values():
+            if not command:
+                continue
+            self._run_hidden_command(command)
+
+        if repo_commands:
+            configured_types = ', '.join(
+                sorted(repo_type.value for repo_type in repo_commands)
+            )
+            logger.info(
+                'Configured Artifactory repositories: %s',
+                configured_types,
+            )
+        else:
+            logger.info('Configured Artifactory server %s', server_id)
+
+    def _configure_artifactory(self) -> None:
+        artifactory_config = getattr(self.config, 'artifactory', None)
+        if not artifactory_config or not artifactory_config.is_configured():
+            return
+
+        host = artifactory_config.normalized_host()
+        api_key = artifactory_config.api_key_value()
+        if not host or not api_key:
+            return
+
+        try:
+            if self.event_stream:
+                secret = {'ARTIFACTORY_API_KEY': api_key}
+                try:
+                    self.event_stream.update_secrets(secret)
+                except AttributeError:
+                    self.event_stream.set_secrets(secret)
+
+            self.add_env_vars(
+                {
+                    'ARTIFACTORY_HOST': host,
+                    'ARTIFACTORY_API_KEY': api_key,
+                }
+            )
+            self._ensure_jfrog_cli_installed()
+            self._configure_jfrog_cli(artifactory_config)
+        except Exception as exc:
+            logger.warning(
+                'Failed to configure Artifactory integration: %s',
+                exc,
+                exc_info=True,
+            )
 
     @abstractmethod
     def get_mcp_config(

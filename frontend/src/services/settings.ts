@@ -1,4 +1,7 @@
-import { Settings } from "#/types/settings";
+import {
+  DEFAULT_ARTIFACTORY_CLI_INSTALL_URL,
+  Settings,
+} from "#/types/settings";
 
 export const LATEST_SETTINGS_VERSION = 5;
 
@@ -31,6 +34,10 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   GIT_USER_NAME: "openhands",
   GIT_USER_EMAIL: "openhands@all-hands.dev",
+  ARTIFACTORY_HOST: "",
+  ARTIFACTORY_CLI_INSTALL_URL: DEFAULT_ARTIFACTORY_CLI_INSTALL_URL,
+  ARTIFACTORY_API_KEY_SET: false,
+  ARTIFACTORY_REPOSITORIES: {},
 };
 
 /**
