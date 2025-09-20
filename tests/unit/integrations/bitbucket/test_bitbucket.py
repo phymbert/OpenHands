@@ -29,7 +29,7 @@ def bitbucket_handler():
         owner='test-workspace',
         repo='test-repo',
         token='test-token',
-        username='test-user',
+        user_id='test-user',
     )
 
 
@@ -38,13 +38,13 @@ def test_init():
         owner='test-workspace',
         repo='test-repo',
         token='test-token',
-        username='test-user',
+        user_id='test-user',
     )
 
     assert handler.owner == 'test-workspace'
     assert handler.repo == 'test-repo'
     assert handler.token == 'test-token'
-    assert handler.username == 'test-user'
+    assert handler.user_id == 'test-user'
     assert handler.base_domain == 'bitbucket.org'
     assert handler.base_url == 'https://api.bitbucket.org/2.0'
     assert (
@@ -63,9 +63,9 @@ def test_init_server_mode():
         owner='PROJ',
         repo='test-repo',
         token='user:pass',
-        username=None,
+        user_id=None,
         base_domain='bitbucket.example.com',
-        bit_bucket_mode='server',
+        bitbucket_mode='server',
     )
 
     assert handler.base_url == 'https://bitbucket.example.com/rest/api/1.0'
@@ -176,9 +176,9 @@ def test_create_pr_server_mode(mock_post):
         owner='PROJ',
         repo='test-repo',
         token='user:pass',
-        username=None,
+        user_id=None,
         base_domain='bitbucket.example.com',
-        bit_bucket_mode='server',
+        bitbucket_mode='server',
     )
 
     mock_response = MagicMock()
@@ -285,9 +285,9 @@ def test_send_pull_request_bitbucket(
         'test-workspace',
         'test-repo',
         'test-token',
-        None,
-        'bitbucket.org',
-        bit_bucket_mode='cloud',
+        user_id=None,
+        base_domain='bitbucket.org',
+        bitbucket_mode='cloud',
     )
 
     # Verify ServiceContextIssue was created correctly
@@ -493,7 +493,7 @@ async def test_validate_provider_token_with_bitbucket_server_mode():
         mock_bitbucket_service.assert_called_once_with(
             token=token,
             base_domain=base_domain,
-            bit_bucket_mode='server',
+            bitbucket_mode='server',
         )
         assert result == ProviderType.BITBUCKET
 
@@ -827,7 +827,7 @@ async def test_fetch_paginated_data_server_mode():
     service = BitBucketService(
         token=SecretStr('user:pass'),
         base_domain='bitbucket.example.com',
-        bit_bucket_mode='server',
+        bitbucket_mode='server',
     )
 
     first_page = ({'values': [{'id': 1}], 'isLastPage': False, 'nextPageStart': 2}, {})
@@ -878,7 +878,7 @@ def test_parse_repository_server_mode():
     service = BitBucketService(
         token=SecretStr('user:pass'),
         base_domain='bitbucket.example.com',
-        bit_bucket_mode='server',
+        bitbucket_mode='server',
     )
 
     repo_data = {

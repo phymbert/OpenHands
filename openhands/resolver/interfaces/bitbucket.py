@@ -18,9 +18,9 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         owner: str,
         repo: str,
         token: str,
-        username: str | None = None,
+        user_id: str | None = None,
         base_domain: str = 'bitbucket.org',
-        bit_bucket_mode: Literal['cloud', 'server'] = 'cloud',
+        bitbucket_mode: Literal['cloud', 'server'] = 'cloud',
     ):
         """Initialize a Bitbucket issue handler.
 
@@ -28,21 +28,21 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             owner: The workspace of the repository
             repo: The name of the repository
             token: The Bitbucket API token
-            username: Optional Bitbucket username
+            user_id: Optional Bitbucket user ID
             base_domain: The domain for Bitbucket Server (default: "bitbucket.org")
         """
         self.owner = owner
         self.repo = repo
         self.token = token
-        self.username = username
+        self.user_id = user_id
         self.base_domain = base_domain
-        self.bit_bucket_mode = bit_bucket_mode
-        if self.bit_bucket_mode not in {'cloud', 'server'}:
+        self.bitbucket_mode = bitbucket_mode
+        if self.bitbucket_mode not in {'cloud', 'server'}:
             raise ValueError(
-                f'Unsupported Bitbucket mode: {self.bit_bucket_mode}'
+                f'Unsupported Bitbucket mode: {self.bitbucket_mode}'
             )
-        if self.username is None and ':' in self.token:
-            self.username = self.token.split(':', 1)[0]
+        if self.user_id is None and ':' in self.token:
+            self.user_id = self.token.split(':', 1)[0]
         self.base_url = self.get_base_url()
         self.download_url = self.get_download_url()
         self.clone_url = self.get_clone_url()
@@ -52,13 +52,13 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         self.owner = owner
 
     def _get_repo_api_base(self) -> str:
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'{self.base_url}/projects/{self.owner}/repos/{self.repo}'
         return f'{self.base_url}/repositories/{self.owner}/{self.repo}'
 
     def get_headers(self) -> dict[str, str]:
         # Check if the token contains a colon, which indicates it's in username:password format
-        if self.bit_bucket_mode == 'server' or ':' in self.token:
+        if self.bitbucket_mode == 'server' or ':' in self.token:
             auth_str = base64.b64encode(self.token.encode()).decode()
             return {
                 'Authorization': f'Basic {auth_str}',
@@ -72,13 +72,13 @@ class BitbucketIssueHandler(IssueHandlerInterface):
 
     def get_base_url(self) -> str:
         """Get the base URL for the Bitbucket API."""
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'https://{self.base_domain}/rest/api/1.0'
         return f'https://api.{self.base_domain}/2.0'
 
     def get_download_url(self) -> str:
         """Get the download URL for the repository."""
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return (
                 f'https://{self.base_domain}/rest/api/latest/projects/{self.owner}'
                 f'/repos/{self.repo}/archive?format=zip'
@@ -87,19 +87,19 @@ class BitbucketIssueHandler(IssueHandlerInterface):
 
     def get_clone_url(self) -> str:
         """Get the clone URL for the repository."""
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'https://{self.base_domain}/scm/{self.owner}/{self.repo}.git'
         return f'https://{self.base_domain}/{self.owner}/{self.repo}.git'
 
     def get_repo_url(self) -> str:
         """Get the URL for the repository."""
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'https://{self.base_domain}/projects/{self.owner}/repos/{self.repo}'
         return f'https://{self.base_domain}/{self.owner}/{self.repo}'
 
     def get_issue_url(self, issue_number: int) -> str:
         """Get the URL for an issue."""
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'{self.get_repo_url()}/pull-requests/{issue_number}'
         return f'{self.get_repo_url()}/issues/{issue_number}'
 
@@ -116,7 +116,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         Returns:
             An Issue object
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests/{issue_number}'
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, headers=self.headers)
@@ -170,7 +170,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
 
         payload: dict[str, Any]
 
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests'
             payload = {
                 'title': title,
@@ -203,7 +203,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         response.raise_for_status()
         data = response.json()
 
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             links = data.get('links', {})
             if isinstance(links, dict):
                 web_links = links.get('self') or links.get('html') or []
@@ -246,7 +246,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         Returns:
             The URL for the branch
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'{self.get_repo_url()}/browse?at=refs/heads/{branch_name}'
         return (
             f'https://{self.base_domain}/{self.owner}/{self.repo}/branch/{branch_name}'
@@ -261,7 +261,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         Returns:
             The URL for comparing branches
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             target_branch = self.get_default_branch_name()
             return (
                 f'{self.get_repo_url()}/compare/commits?'
@@ -276,10 +276,10 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         Returns:
             The URL for authorization
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             credentials = self.token
-            if self.username and ':' not in credentials:
-                credentials = f'{self.username}:{credentials}'
+            if self.user_id and ':' not in credentials:
+                credentials = f'{self.user_id}:{credentials}'
             return f'https://{credentials}@{self.base_domain}/'
         return f'https://oauth2:{self.token}@{self.base_domain}/'
 
@@ -292,7 +292,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         Returns:
             The URL for the pull request
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return f'{self.get_repo_url()}/pull-requests/{pr_number}'
         return f'https://{self.base_domain}/{self.owner}/{self.repo}/pull-requests/{pr_number}'
 
@@ -317,7 +317,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             True if the branch exists, False otherwise
         """
         try:
-            if self.bit_bucket_mode == 'server':
+            if self.bitbucket_mode == 'server':
                 url = f'{self._get_repo_api_base()}/branches'
                 params = {'filterText': branch_name, 'limit': 1}
                 response = httpx.get(url, headers=self.headers, params=params)
@@ -349,7 +349,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             response = httpx.get(self._get_repo_api_base(), headers=self.headers)
             response.raise_for_status()
             data = response.json()
-            if self.bit_bucket_mode == 'server':
+            if self.bitbucket_mode == 'server':
                 default_branch = data.get('defaultBranch') or {}
                 display_id = default_branch.get('displayId')
                 if display_id:
@@ -387,7 +387,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
 
         url = f'{self._get_repo_api_base()}/pullrequests'
 
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests'
             payload = {
                 'title': title,
@@ -420,7 +420,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         response.raise_for_status()
         data = response.json() or {}
 
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             links = data.get('links', {})
             pr_url = ''
             if isinstance(links, dict):
@@ -455,7 +455,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             issue_number: The issue number
             msg: The message
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests/{issue_number}/comments'
             payload = cast(dict[str, Any], {'text': msg})
         else:
@@ -529,7 +529,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
         """
         new_issue_references = []
 
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             return closing_issues
 
 
@@ -644,7 +644,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
             comment_id: The comment ID
             reply: The reply message
         """
-        if self.bit_bucket_mode == 'server':
+        if self.bitbucket_mode == 'server':
             url = f'{self._get_repo_api_base()}/pull-requests/{pr_number}/comments'
             payload = {'text': reply, 'parent': {'id': int(comment_id)}}
         else:
@@ -674,9 +674,9 @@ class BitbucketPRHandler(BitbucketIssueHandler):
         owner: str,
         repo: str,
         token: str,
-        username: str | None = None,
+        user_id: str | None = None,
         base_domain: str = 'bitbucket.org',
-        bit_bucket_mode: Literal['cloud', 'server'] = 'cloud',
+        bitbucket_mode: Literal['cloud', 'server'] = 'cloud',
     ):
         """Initialize a Bitbucket PR handler.
 
@@ -684,7 +684,7 @@ class BitbucketPRHandler(BitbucketIssueHandler):
             owner: The workspace of the repository
             repo: The name of the repository
             token: The Bitbucket API token
-            username: Optional Bitbucket username
+            user_id: Optional Bitbucket user ID
             base_domain: The domain for Bitbucket Server (default: "bitbucket.org")
         """
-        super().__init__(owner, repo, token, username, base_domain, bit_bucket_mode)
+        super().__init__(owner, repo, token, user_id, base_domain, bitbucket_mode)

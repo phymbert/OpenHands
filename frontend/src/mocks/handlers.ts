@@ -311,7 +311,7 @@ export const handlers = [
     if (typeof body === "object" && body?.provider_tokens) {
       const rawTokens = body.provider_tokens as Record<
         string,
-        { token?: string; host?: string | null; bit_bucket_mode?: string }
+        { token?: string; host?: string | null; bitbucket_mode?: string }
       >;
 
       const providerTokensSet: Partial<
@@ -323,8 +323,8 @@ export const handlers = [
               return [provider as Provider, null];
             }
 
-            const normalizedMode = val.bit_bucket_mode as
-              | ProviderTokenSettings["bit_bucket_mode"]
+            const normalizedMode = val.bitbucket_mode as
+              | ProviderTokenSettings["bitbucket_mode"]
               | undefined;
 
             const shouldPersist =
@@ -340,7 +340,7 @@ export const handlers = [
               provider as Provider,
               {
                 host: val.host ?? null,
-                bit_bucket_mode: normalizedMode,
+                bitbucket_mode: normalizedMode,
               },
             ];
           })

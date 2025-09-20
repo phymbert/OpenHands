@@ -44,7 +44,7 @@ class ProviderToken(BaseModel):
     token: SecretStr | None = Field(default=None)
     user_id: str | None = Field(default=None)
     host: str | None = Field(default=None)
-    bit_bucket_mode: BitbucketMode | None = Field(default='cloud')
+    bitbucket_mode: BitbucketMode | None = Field(default='cloud')
 
     model_config = ConfigDict(
         frozen=True,  # Makes the entire model immutable
@@ -64,17 +64,17 @@ class ProviderToken(BaseModel):
                 token_str = ''  # type: ignore[unreachable]
             user_id = token_value.get('user_id')
             host = token_value.get('host')
-            bit_bucket_mode = token_value.get('bit_bucket_mode')
-            if bit_bucket_mode not in (None, 'cloud', 'server'):
-                raise ValueError('Invalid bit_bucket_mode value')
+            bitbucket_mode = token_value.get('bitbucket_mode')
+            if bitbucket_mode not in (None, 'cloud', 'server'):
+                raise ValueError('Invalid bitbucket_mode value')
             resolved_mode: BitbucketMode = 'cloud'
-            if bit_bucket_mode is not None:
-                resolved_mode = cast(BitbucketMode, bit_bucket_mode)
+            if bitbucket_mode is not None:
+                resolved_mode = cast(BitbucketMode, bitbucket_mode)
             return cls(
                 token=SecretStr(token_str),
                 user_id=user_id,
                 host=host,
-                bit_bucket_mode=resolved_mode,
+                bitbucket_mode=resolved_mode,
             )
 
         else:
@@ -175,9 +175,9 @@ class ProviderHandler:
 
         if provider == ProviderType.BITBUCKET:
             bitbucket_mode: BitbucketMode = (
-                token.bit_bucket_mode if token.bit_bucket_mode is not None else 'cloud'
+                token.bitbucket_mode if token.bitbucket_mode is not None else 'cloud'
             )
-            kwargs['bit_bucket_mode'] = bitbucket_mode
+            kwargs['bitbucket_mode'] = bitbucket_mode
 
         return service_class(**kwargs)
 

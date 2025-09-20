@@ -60,11 +60,11 @@ async def load_settings(
                 if provider_token.token or provider_token.user_id:
                     bitbucket_mode = None
                     if provider_type == ProviderType.BITBUCKET:
-                        bitbucket_mode = provider_token.bit_bucket_mode or 'cloud'
+                        bitbucket_mode = provider_token.bitbucket_mode or 'cloud'
 
                     provider_tokens_set[provider_type] = ProviderTokenSettings(
                         host=provider_token.host,
-                        bit_bucket_mode=bitbucket_mode,
+                        bitbucket_mode=bitbucket_mode,
                     )
 
         settings_with_token_data = GETSettingsModel(

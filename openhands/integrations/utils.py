@@ -12,7 +12,7 @@ from openhands.integrations.provider import ProviderType
 async def validate_provider_token(
     token: SecretStr,
     base_domain: str | None = None,
-    bit_bucket_mode: Literal['cloud', 'server'] | None = None,
+    bitbucket_mode: Literal['cloud', 'server'] | None = None,
 ) -> ProviderType | None:
     """Determine whether a token is for GitHub, GitLab, or Bitbucket by attempting to get user info
     from the services.
@@ -52,8 +52,8 @@ async def validate_provider_token(
     # Try Bitbucket last
     bitbucket_error = None
     try:
-        if bit_bucket_mode is not None:
-            resolved_mode = bit_bucket_mode
+        if bitbucket_mode is not None:
+            resolved_mode = bitbucket_mode
         elif base_domain and base_domain != 'bitbucket.org':
             resolved_mode = 'server'
         else:
@@ -62,7 +62,7 @@ async def validate_provider_token(
         bitbucket_service = BitBucketService(
             token=token,
             base_domain=base_domain,
-            bit_bucket_mode=resolved_mode,
+            bitbucket_mode=resolved_mode,
         )
         await bitbucket_service.get_user()
         return ProviderType.BITBUCKET

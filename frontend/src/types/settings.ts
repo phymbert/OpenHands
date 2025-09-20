@@ -12,12 +12,12 @@ export type BitbucketMode = "cloud" | "server";
 export type ProviderToken = {
   token: string;
   host: string | null;
-  bit_bucket_mode?: BitbucketMode;
+  bitbucket_mode?: BitbucketMode;
 };
 
 export type ProviderTokenSettings = {
   host: string | null;
-  bit_bucket_mode?: BitbucketMode;
+  bitbucket_mode?: BitbucketMode;
 };
 
 export type MCPSSEServer = {

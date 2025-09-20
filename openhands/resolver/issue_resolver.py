@@ -132,11 +132,11 @@ class IssueResolver:
                 else 'bitbucket.org'
             )
 
-        self.bit_bucket_mode: Literal['cloud', 'server'] = getattr(
-            args, 'bit_bucket_mode', 'cloud'
+        self.bitbucket_mode: Literal['cloud', 'server'] = getattr(
+            args, 'bitbucket_mode', 'cloud'
         )
-        if self.bit_bucket_mode not in {'cloud', 'server'}:
-            raise ValueError(f'Unsupported Bitbucket mode: {self.bit_bucket_mode}')
+        if self.bitbucket_mode not in {'cloud', 'server'}:
+            raise ValueError(f'Unsupported Bitbucket mode: {self.bitbucket_mode}')
 
         self.output_dir = args.output_dir
         self.issue_type = issue_type
@@ -177,7 +177,7 @@ class IssueResolver:
             base_domain=base_domain,
             issue_type=self.issue_type,
             llm_config=self.app_config.get_llm_config(),
-            bit_bucket_mode=self.bit_bucket_mode,
+            bitbucket_mode=self.bitbucket_mode,
         )
         self.issue_handler = factory.create()
 

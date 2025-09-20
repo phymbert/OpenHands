@@ -29,7 +29,7 @@ class POSTCustomSecrets(BaseModel):
 
 class ProviderTokenSettings(BaseModel):
     host: str | None = None
-    bit_bucket_mode: Literal['cloud', 'server'] | None = None
+    bitbucket_mode: Literal['cloud', 'server'] | None = None
 
 
 class GETSettingsModel(Settings):

@@ -25,7 +25,7 @@ class IssueHandlerFactory:
         base_domain: str,
         issue_type: str,
         llm_config: LLMConfig,
-        bit_bucket_mode: Literal['cloud', 'server'] = 'cloud',
+        bitbucket_mode: Literal['cloud', 'server'] = 'cloud',
     ) -> None:
         self.owner = owner
         self.repo = repo
@@ -35,7 +35,7 @@ class IssueHandlerFactory:
         self.base_domain = base_domain
         self.issue_type = issue_type
         self.llm_config = llm_config
-        self.bit_bucket_mode = bit_bucket_mode
+        self.bitbucket_mode = bitbucket_mode
 
     def create(self) -> ServiceContextIssue | ServiceContextPR:
         if self.issue_type == 'issue':
@@ -67,9 +67,9 @@ class IssueHandlerFactory:
                         self.owner,
                         self.repo,
                         self.token,
-                        self.username,
-                        self.base_domain,
-                        bit_bucket_mode=self.bit_bucket_mode,
+                        user_id=self.username,
+                        base_domain=self.base_domain,
+                        bitbucket_mode=self.bitbucket_mode,
                     ),
                     self.llm_config,
                 )
@@ -104,9 +104,9 @@ class IssueHandlerFactory:
                         self.owner,
                         self.repo,
                         self.token,
-                        self.username,
-                        self.base_domain,
-                        bit_bucket_mode=self.bit_bucket_mode,
+                        user_id=self.username,
+                        base_domain=self.base_domain,
+                        bitbucket_mode=self.bitbucket_mode,
                     ),
                     self.llm_config,
                 )
