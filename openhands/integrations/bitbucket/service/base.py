@@ -26,7 +26,7 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
 
     @property
     def _is_server(self) -> bool:
-        return getattr(self, 'bit_bucket_mode', 'cloud') == 'server'
+        return getattr(self, 'bitbucket_mode', 'cloud') == 'server'
 
     def _repo_api_base(self, owner: str, repo: str) -> str:
         if self._is_server:
@@ -158,10 +158,10 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
     async def get_user(self) -> User:
         """Get the authenticated user's information."""
         if self._is_server:
-            username = getattr(self, 'username', None)
-            if not username:
-                raise AuthenticationError('Username is required for Bitbucket Server access')
-            url = f'{self.BASE_URL}/users/{username}'
+            user_id = getattr(self, 'user_id', None)
+            if not user_id:
+                raise AuthenticationError('User ID is required for Bitbucket Server access')
+            url = f'{self.BASE_URL}/users/{user_id}'
             data, _ = await self._make_request(url)
             links = data.get('links', {})
             avatar = ''
@@ -172,8 +172,8 @@ class BitBucketMixinBase(BaseGitService, HTTPClient):
             display_name = data.get('displayName')
             email = data.get('emailAddress')
             return User(
-                id=str(data.get('id') or data.get('slug') or username),
-                login=data.get('name') or username,
+                id=str(data.get('id') or data.get('slug') or user_id),
+                login=data.get('name') or user_id,
                 avatar_url=avatar,
                 name=display_name,
                 email=email,

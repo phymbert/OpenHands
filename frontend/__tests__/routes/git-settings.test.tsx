@@ -293,7 +293,7 @@ describe("Form submission", () => {
     expect(saveProvidersSpy).toHaveBeenCalledWith({
       github: { token: "test-token", host: "" },
       gitlab: { token: "", host: "" },
-      bitbucket: { token: "", host: "", bit_bucket_mode: "cloud" },
+      bitbucket: { token: "", host: "", bitbucket_mode: "cloud" },
       enterprise_sso: { token: "", host: "" },
     });
   });
@@ -318,7 +318,7 @@ describe("Form submission", () => {
     expect(saveProvidersSpy).toHaveBeenCalledWith({
       github: { token: "", host: "" },
       gitlab: { token: "test-token", host: "" },
-      bitbucket: { token: "", host: "", bit_bucket_mode: "cloud" },
+      bitbucket: { token: "", host: "", bitbucket_mode: "cloud" },
       enterprise_sso: { token: "", host: "" },
     });
   });
@@ -343,7 +343,7 @@ describe("Form submission", () => {
     expect(saveProvidersSpy).toHaveBeenCalledWith({
       github: { token: "", host: "" },
       gitlab: { token: "", host: "" },
-      bitbucket: { token: "test-token", host: "", bit_bucket_mode: "cloud" },
+      bitbucket: { token: "test-token", host: "", bitbucket_mode: "cloud" },
       enterprise_sso: { token: "", host: "" },
     });
   });
@@ -375,7 +375,7 @@ describe("Form submission", () => {
       bitbucket: {
         token: "",
         host: "bitbucket.example.com",
-        bit_bucket_mode: "server",
+        bitbucket_mode: "server",
       },
       enterprise_sso: { token: "", host: "" },
     });

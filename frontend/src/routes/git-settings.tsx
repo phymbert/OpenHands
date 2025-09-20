@@ -62,7 +62,7 @@ function GitSettingsScreen() {
       | undefined) ?? null;
   const existingBitbucketHost = existingBitbucketSettings?.host ?? null;
   const existingBitbucketMode: BitbucketMode =
-    existingBitbucketSettings?.bit_bucket_mode ?? "cloud";
+    existingBitbucketSettings?.bitbucket_mode ?? "cloud";
 
   const [bitbucketMode, setBitbucketMode] = React.useState<BitbucketMode>(
     existingBitbucketMode,
@@ -108,7 +108,7 @@ function GitSettingsScreen() {
       bitbucket: {
         token: bitbucketToken,
         host: bitbucketHost,
-        bit_bucket_mode: bitbucketModeValue,
+        bitbucket_mode: bitbucketModeValue,
       },
       enterprise_sso: { token: "", host: "" },
     };
