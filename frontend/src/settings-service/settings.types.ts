@@ -22,6 +22,7 @@ export type ApiSettings = {
   provider_tokens_set: Partial<Record<Provider, string | null>>;
   max_budget_per_task: number | null;
   artifactory_host: string | null;
+  artifactory_cli_install_url: string | null;
   artifactory_api_key_set: boolean;
   artifactory_repositories: Partial<Record<ArtifactoryRepositoryType, string>>;
   mcp_config?: {
@@ -44,6 +45,7 @@ export type PostApiSettings = ApiSettings & {
   user_consents_to_analytics: boolean | null;
   search_api_key?: string;
   artifactory_host?: string | null;
+  artifactory_cli_install_url?: string | null;
   artifactory_api_key?: string;
   artifactory_repositories?: Partial<Record<ArtifactoryRepositoryType, string>>;
   mcp_config?: {

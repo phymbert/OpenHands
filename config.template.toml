@@ -106,8 +106,13 @@
 # Identifier used when configuring the jfrog CLI (defaults to "openhands-artifactory")
 #server_id = "openhands-artifactory"
 
-# Repository keys per package type (leave empty to skip configuring that type)
-#repositories = { python = "", javascript = "", java = "", go = "" }
+# URL to download the jfrog CLI installer from (defaults to https://getcli.jfrog.io)
+#cli_install_url = "https://getcli.jfrog.io"
+
+# Repository keys per package type (leave empty to skip configuring that type).
+# Supported package types include: pypi, npm, maven, gradle, go, nuget, docker, helm,
+# terraform, conan, cargo, composer, gems, cocoapods, cran, pub, sbt, ivy, swift, bower.
+#repositories = { pypi = "", npm = "", maven = "", go = "" }
 
 #################################### LLM #####################################
 # Configuration for LLM models (group name starts with 'llm')

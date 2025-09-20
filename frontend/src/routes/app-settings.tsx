@@ -7,8 +7,10 @@ import { DEFAULT_SETTINGS } from "#/services/settings";
 import { BrandButton } from "#/components/features/settings/brand-button";
 import { SettingsSwitch } from "#/components/features/settings/settings-switch";
 import { SettingsInput } from "#/components/features/settings/settings-input";
+import { SettingsSelect } from "#/components/features/settings/settings-select";
 import { I18nKey } from "#/i18n/declaration";
 import { LanguageInput } from "#/components/features/settings/app-settings/language-input";
+import { ArtifactoryRepositorySearchInput } from "#/components/features/settings/app-settings/artifactory-repository-search-input";
 import { handleCaptureConsent } from "#/utils/handle-capture-consent";
 import {
   displayErrorToast,
@@ -23,12 +25,117 @@ import {
   ArtifactoryRepositoryType,
   ArtifactoryRepositoryTypes,
 } from "#/types/settings";
+import { useArtifactoryRepositoryTypes } from "#/hooks/query/use-artifactory-repository-types";
+
+const SUPPORTED_ARTIFACTORY_REPO_TYPES = Object.values(
+  ArtifactoryRepositoryTypes,
+) as ArtifactoryRepositoryType[];
 
 const ARTIFACTORY_REPO_LABELS: Record<ArtifactoryRepositoryType, I18nKey> = {
-  python: I18nKey.SETTINGS$ARTIFACTORY_REPO_PYTHON,
-  javascript: I18nKey.SETTINGS$ARTIFACTORY_REPO_JAVASCRIPT,
-  java: I18nKey.SETTINGS$ARTIFACTORY_REPO_JAVA,
+  pypi: I18nKey.SETTINGS$ARTIFACTORY_REPO_PYPI,
+  npm: I18nKey.SETTINGS$ARTIFACTORY_REPO_NPM,
+  maven: I18nKey.SETTINGS$ARTIFACTORY_REPO_MAVEN,
+  gradle: I18nKey.SETTINGS$ARTIFACTORY_REPO_GRADLE,
   go: I18nKey.SETTINGS$ARTIFACTORY_REPO_GO,
+  nuget: I18nKey.SETTINGS$ARTIFACTORY_REPO_NUGET,
+  docker: I18nKey.SETTINGS$ARTIFACTORY_REPO_DOCKER,
+  helm: I18nKey.SETTINGS$ARTIFACTORY_REPO_HELM,
+  terraform: I18nKey.SETTINGS$ARTIFACTORY_REPO_TERRAFORM,
+  conan: I18nKey.SETTINGS$ARTIFACTORY_REPO_CONAN,
+  cargo: I18nKey.SETTINGS$ARTIFACTORY_REPO_CARGO,
+  composer: I18nKey.SETTINGS$ARTIFACTORY_REPO_COMPOSER,
+  gems: I18nKey.SETTINGS$ARTIFACTORY_REPO_GEMS,
+  cocoapods: I18nKey.SETTINGS$ARTIFACTORY_REPO_COCOAPODS,
+  cran: I18nKey.SETTINGS$ARTIFACTORY_REPO_CRAN,
+  pub: I18nKey.SETTINGS$ARTIFACTORY_REPO_PUB,
+  sbt: I18nKey.SETTINGS$ARTIFACTORY_REPO_SBT,
+  ivy: I18nKey.SETTINGS$ARTIFACTORY_REPO_IVY,
+  swift: I18nKey.SETTINGS$ARTIFACTORY_REPO_SWIFT,
+  bower: I18nKey.SETTINGS$ARTIFACTORY_REPO_BOWER,
+};
+
+type ArtifactoryRepositoryIntegration = {
+  id: string;
+  repositoryType: ArtifactoryRepositoryType | "";
+  repositoryKey: string;
+};
+
+const createIntegration = (
+  repositoryType?: ArtifactoryRepositoryType,
+  repositoryKey?: string,
+  id?: string,
+): ArtifactoryRepositoryIntegration => ({
+  id: id ?? `artifactory-${Math.random().toString(36).slice(2, 10)}`,
+  repositoryType: repositoryType ?? "",
+  repositoryKey: repositoryKey ?? "",
+});
+
+const mapRepositoriesToIntegrations = (
+  repositories?: Partial<Record<ArtifactoryRepositoryType, string>>,
+): ArtifactoryRepositoryIntegration[] => {
+  if (!repositories) {
+    return [];
+  }
+
+  return Object.entries(repositories).map(([type, repositoryKey]) =>
+    createIntegration(
+      type as ArtifactoryRepositoryType,
+      repositoryKey || "",
+      `artifactory-${type}`,
+    ),
+  );
+};
+
+const integrationsToRepositoryMap = (
+  integrations: ArtifactoryRepositoryIntegration[],
+): Partial<Record<ArtifactoryRepositoryType, string>> => {
+  const result: Partial<Record<ArtifactoryRepositoryType, string>> = {};
+
+  integrations.forEach(({ repositoryType, repositoryKey }) => {
+    if (!repositoryType) {
+      return;
+    }
+    const trimmed = repositoryKey.trim();
+    if (trimmed) {
+      result[repositoryType as ArtifactoryRepositoryType] = trimmed;
+    }
+  });
+
+  return result;
+};
+
+const normalizeRepositoryMap = (
+  map?: Partial<Record<ArtifactoryRepositoryType, string>>,
+) => {
+  const normalized: Record<string, string> = {};
+  if (!map) {
+    return normalized;
+  }
+
+  Object.entries(map).forEach(([type, repositoryKey]) => {
+    if (typeof repositoryKey === "string") {
+      const trimmed = repositoryKey.trim();
+      if (trimmed) {
+        normalized[type] = trimmed;
+      }
+    }
+  });
+
+  return normalized;
+};
+
+const repositoryMapsEqual = (
+  a?: Partial<Record<ArtifactoryRepositoryType, string>>,
+  b?: Partial<Record<ArtifactoryRepositoryType, string>>,
+) => {
+  const normalizedA = normalizeRepositoryMap(a);
+  const normalizedB = normalizeRepositoryMap(b);
+  const keysA = Object.keys(normalizedA);
+  const keysB = Object.keys(normalizedB);
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+  return keysA.every((key) => normalizedA[key] === normalizedB[key]);
 };
 
 function AppSettingsScreen() {
@@ -37,6 +144,23 @@ function AppSettingsScreen() {
   const { mutate: saveSettings, isPending } = useSaveSettings();
   const { data: settings, isLoading } = useSettings();
   const { data: config } = useConfig();
+  const { data: repoTypesFromApi } = useArtifactoryRepositoryTypes();
+
+  const repositoryTypes = React.useMemo(
+    () => repoTypesFromApi ?? SUPPORTED_ARTIFACTORY_REPO_TYPES,
+    [repoTypesFromApi],
+  );
+  const artifactoryRepositoryOptions = React.useMemo(
+    () =>
+      repositoryTypes.map((type) => {
+        const labelKey = ARTIFACTORY_REPO_LABELS[type];
+        return {
+          value: type,
+          label: labelKey ? t(labelKey) : type,
+        };
+      }),
+    [repositoryTypes, t],
+  );
 
   const [languageInputHasChanged, setLanguageInputHasChanged] =
     React.useState(false);
@@ -62,41 +186,49 @@ function AppSettingsScreen() {
     React.useState(false);
   const [artifactoryHostHasChanged, setArtifactoryHostHasChanged] =
     React.useState(false);
+  const [
+    artifactoryCliInstallUrlHasChanged,
+    setArtifactoryCliInstallUrlHasChanged,
+  ] = React.useState(false);
   const [artifactoryApiKeyHasChanged, setArtifactoryApiKeyHasChanged] =
     React.useState(false);
   const [artifactoryClearApiKey, setArtifactoryClearApiKey] =
     React.useState(false);
   const [artifactoryApiKeyInputValue, setArtifactoryApiKeyInputValue] =
     React.useState("");
-  const [artifactoryRepoChanges, setArtifactoryRepoChanges] = React.useState<
-    Record<ArtifactoryRepositoryType, boolean>
-  >({
-    python: false,
-    javascript: false,
-    java: false,
-    go: false,
-  });
+  const [artifactoryIntegrations, setArtifactoryIntegrations] = React.useState<
+    ArtifactoryRepositoryIntegration[]
+  >([]);
+
+  React.useEffect(() => {
+    const repositories = settings?.ARTIFACTORY_REPOSITORIES;
+    setArtifactoryIntegrations(mapRepositoriesToIntegrations(repositories));
+  }, [settings?.ARTIFACTORY_REPOSITORIES]);
+
+  const artifactoryRepositoriesPayload = React.useMemo(
+    () => integrationsToRepositoryMap(artifactoryIntegrations),
+    [artifactoryIntegrations],
+  );
 
   const artifactoryReposHaveChanged = React.useMemo(
-    () => Object.values(artifactoryRepoChanges).some(Boolean),
-    [artifactoryRepoChanges],
+    () =>
+      !repositoryMapsEqual(
+        settings?.ARTIFACTORY_REPOSITORIES,
+        artifactoryRepositoriesPayload,
+      ),
+    [settings?.ARTIFACTORY_REPOSITORIES, artifactoryRepositoriesPayload],
   );
 
   React.useEffect(() => {
     setArtifactoryHostHasChanged(false);
+    setArtifactoryCliInstallUrlHasChanged(false);
     setArtifactoryApiKeyHasChanged(false);
     setArtifactoryClearApiKey(false);
     setArtifactoryApiKeyInputValue("");
-    setArtifactoryRepoChanges({
-      python: false,
-      javascript: false,
-      java: false,
-      go: false,
-    });
   }, [
     settings?.ARTIFACTORY_HOST,
+    settings?.ARTIFACTORY_CLI_INSTALL_URL,
     settings?.ARTIFACTORY_API_KEY_SET,
-    settings?.ARTIFACTORY_REPOSITORIES,
   ]);
 
   const formAction = (formData: FormData) => {
@@ -132,19 +264,11 @@ function AppSettingsScreen() {
 
     const artifactoryHost =
       formData.get("artifactory-host-input")?.toString().trim() || "";
+    const artifactoryCliInstallUrl =
+      formData.get("artifactory-cli-install-url-input")?.toString().trim() ??
+      "";
     const artifactoryApiKeyInput =
       formData.get("artifactory-api-key-input")?.toString().trim() || "";
-
-    const artifactoryRepositories: Partial<
-      Record<ArtifactoryRepositoryType, string>
-    > = {};
-    Object.values(ArtifactoryRepositoryTypes).forEach((type) => {
-      const repoValue =
-        formData.get(`artifactory-repo-${type}`)?.toString().trim() || "";
-      if (repoValue) {
-        artifactoryRepositories[type as ArtifactoryRepositoryType] = repoValue;
-      }
-    });
 
     const shouldSendArtifactoryKey =
       artifactoryClearApiKey || artifactoryApiKeyHasChanged;
@@ -166,7 +290,8 @@ function AppSettingsScreen() {
       GIT_USER_NAME: gitUserName,
       GIT_USER_EMAIL: gitUserEmail,
       ARTIFACTORY_HOST: artifactoryHost,
-      ARTIFACTORY_REPOSITORIES: artifactoryRepositories,
+      ARTIFACTORY_CLI_INSTALL_URL: artifactoryCliInstallUrl,
+      ARTIFACTORY_REPOSITORIES: artifactoryRepositoriesPayload,
     };
 
     if (shouldSendArtifactoryKey) {
@@ -191,15 +316,10 @@ function AppSettingsScreen() {
         setGitUserNameHasChanged(false);
         setGitUserEmailHasChanged(false);
         setArtifactoryHostHasChanged(false);
+        setArtifactoryCliInstallUrlHasChanged(false);
         setArtifactoryApiKeyHasChanged(false);
         setArtifactoryClearApiKey(false);
         setArtifactoryApiKeyInputValue("");
-        setArtifactoryRepoChanges({
-          python: false,
-          javascript: false,
-          java: false,
-          go: false,
-        });
       },
     });
   };
@@ -263,6 +383,17 @@ function AppSettingsScreen() {
     setArtifactoryHostHasChanged(value !== currentHost);
   };
 
+  const checkIfArtifactoryCliInstallUrlHasChanged = (value: string) => {
+    const normalizedValue = value.trim();
+    const currentValue =
+      settings?.ARTIFACTORY_CLI_INSTALL_URL ??
+      DEFAULT_SETTINGS.ARTIFACTORY_CLI_INSTALL_URL ??
+      "";
+    setArtifactoryCliInstallUrlHasChanged(
+      normalizedValue !== currentValue.trim(),
+    );
+  };
+
   const handleArtifactoryApiKeyInputChange = (value: string) => {
     const trimmed = value.trim();
     setArtifactoryApiKeyInputValue(value);
@@ -271,15 +402,54 @@ function AppSettingsScreen() {
       setArtifactoryClearApiKey(false);
     }
   };
+  const handleArtifactoryTypeChange = React.useCallback(
+    (id: string, value: string) => {
+      setArtifactoryIntegrations((prev) =>
+        prev.map((integration) => {
+          if (integration.id !== id) {
+            return integration;
+          }
 
-  const handleArtifactoryRepoChange =
-    (type: ArtifactoryRepositoryType) => (value: string) => {
-      const currentValue = settings?.ARTIFACTORY_REPOSITORIES?.[type] || "";
-      setArtifactoryRepoChanges((prev) => ({
-        ...prev,
-        [type]: value !== currentValue,
-      }));
-    };
+          const candidate = value as ArtifactoryRepositoryType;
+          const isValid = repositoryTypes.includes(candidate);
+          const nextType = isValid ? candidate : "";
+          const shouldResetRepository = nextType !== integration.repositoryType;
+
+          return {
+            ...integration,
+            repositoryType: nextType,
+            repositoryKey: shouldResetRepository
+              ? ""
+              : integration.repositoryKey,
+          };
+        }),
+      );
+    },
+    [repositoryTypes],
+  );
+
+  const handleArtifactoryRepositoryChange = React.useCallback(
+    (id: string) => (value: string) => {
+      setArtifactoryIntegrations((prev) =>
+        prev.map((integration) =>
+          integration.id === id
+            ? { ...integration, repositoryKey: value }
+            : integration,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleRemoveArtifactoryIntegration = React.useCallback((id: string) => {
+    setArtifactoryIntegrations((prev) =>
+      prev.filter((integration) => integration.id !== id),
+    );
+  }, []);
+
+  const handleAddArtifactoryIntegration = React.useCallback(() => {
+    setArtifactoryIntegrations((prev) => [...prev, createIntegration()]);
+  }, []);
 
   const formIsClean =
     !languageInputHasChanged &&
@@ -291,6 +461,7 @@ function AppSettingsScreen() {
     !gitUserNameHasChanged &&
     !gitUserEmailHasChanged &&
     !artifactoryHostHasChanged &&
+    !artifactoryCliInstallUrlHasChanged &&
     !artifactoryApiKeyHasChanged &&
     !artifactoryClearApiKey &&
     !artifactoryReposHaveChanged;
@@ -418,6 +589,22 @@ function AppSettingsScreen() {
               className="w-full max-w-[680px]"
             />
             <SettingsInput
+              testId="artifactory-cli-install-url-input"
+              name="artifactory-cli-install-url-input"
+              type="text"
+              label={t(I18nKey.SETTINGS$ARTIFACTORY_CLI_INSTALL_URL)}
+              defaultValue={
+                settings.ARTIFACTORY_CLI_INSTALL_URL ??
+                DEFAULT_SETTINGS.ARTIFACTORY_CLI_INSTALL_URL ??
+                ""
+              }
+              onChange={checkIfArtifactoryCliInstallUrlHasChanged}
+              placeholder={t(
+                I18nKey.SETTINGS$ARTIFACTORY_CLI_INSTALL_URL_PLACEHOLDER,
+              )}
+              className="w-full max-w-[680px]"
+            />
+            <SettingsInput
               testId="artifactory-api-key-input"
               name="artifactory-api-key-input"
               type="password"
@@ -454,26 +641,102 @@ function AppSettingsScreen() {
                   {t(I18nKey.SETTINGS$ARTIFACTORY_REPOSITORIES_DESCRIPTION)}
                 </p>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.values(ArtifactoryRepositoryTypes).map((type) => (
-                  <SettingsInput
-                    key={type}
-                    testId={`artifactory-repo-${type}-input`}
-                    name={`artifactory-repo-${type}`}
-                    type="text"
-                    label={t(ARTIFACTORY_REPO_LABELS[type])}
-                    defaultValue={
-                      settings.ARTIFACTORY_REPOSITORIES?.[
-                        type as ArtifactoryRepositoryType
-                      ] || ""
-                    }
-                    onChange={handleArtifactoryRepoChange(
-                      type as ArtifactoryRepositoryType,
-                    )}
-                    showOptionalTag
-                    className="w-full"
-                  />
-                ))}
+              <div className="flex flex-col gap-4">
+                {artifactoryIntegrations.length === 0 && (
+                  <p className="text-xs text-tertiary">
+                    {t(I18nKey.SETTINGS$ARTIFACTORY_REPOSITORIES_EMPTY)}
+                  </p>
+                )}
+                {artifactoryIntegrations.map((integration) => {
+                  const usedTypes = artifactoryIntegrations
+                    .filter(
+                      (item) =>
+                        item.id !== integration.id && item.repositoryType,
+                    )
+                    .map(
+                      (item) => item.repositoryType,
+                    ) as ArtifactoryRepositoryType[];
+
+                  const availableOptions = artifactoryRepositoryOptions.filter(
+                    (option) =>
+                      option.value === integration.repositoryType ||
+                      !usedTypes.includes(
+                        option.value as ArtifactoryRepositoryType,
+                      ),
+                  );
+
+                  return (
+                    <div
+                      key={integration.id}
+                      className="flex flex-col gap-3 rounded-sm border border-tertiary/50 p-4"
+                    >
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <SettingsSelect
+                          testId={`artifactory-repo-${integration.id}-type`}
+                          label={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_TYPE_LABEL,
+                          )}
+                          value={integration.repositoryType || ""}
+                          onChange={(value) =>
+                            handleArtifactoryTypeChange(integration.id, value)
+                          }
+                          options={availableOptions}
+                          placeholder={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_TYPE_PLACEHOLDER,
+                          )}
+                          showOptionalTag
+                          className="w-full"
+                        />
+                        <ArtifactoryRepositorySearchInput
+                          testId={`artifactory-repo-${integration.id}-name`}
+                          label={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_NAME_LABEL,
+                          )}
+                          placeholder={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_PLACEHOLDER,
+                          )}
+                          repositoryType={integration.repositoryType}
+                          value={integration.repositoryKey}
+                          disabled={!integration.repositoryType}
+                          onChange={handleArtifactoryRepositoryChange(
+                            integration.id,
+                          )}
+                          loadingText={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_LOADING,
+                          )}
+                          emptyText={t(
+                            I18nKey.SETTINGS$ARTIFACTORY_REPOSITORY_EMPTY_RESULTS,
+                          )}
+                          className="w-full"
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <BrandButton
+                          variant="ghost-danger"
+                          type="button"
+                          onClick={() =>
+                            handleRemoveArtifactoryIntegration(integration.id)
+                          }
+                          isDisabled={isPending}
+                        >
+                          {t(I18nKey.SETTINGS$ARTIFACTORY_REMOVE_REPOSITORY)}
+                        </BrandButton>
+                      </div>
+                    </div>
+                  );
+                })}
+                <BrandButton
+                  variant="secondary"
+                  type="button"
+                  onClick={handleAddArtifactoryIntegration}
+                  isDisabled={
+                    isPending ||
+                    repositoryTypes.length === 0 ||
+                    artifactoryIntegrations.length >= repositoryTypes.length
+                  }
+                >
+                  {t(I18nKey.SETTINGS$ARTIFACTORY_ADD_REPOSITORY)}
+                </BrandButton>
               </div>
             </div>
           </div>

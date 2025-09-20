@@ -17,6 +17,7 @@ from zipfile import ZipFile
 import httpx
 
 from openhands.core.config import OpenHandsConfig, SandboxConfig
+from openhands.core.config.artifactory_config import DEFAULT_JFROG_CLI_INSTALL_URL
 from openhands.core.config.mcp_config import MCPConfig, MCPStdioServerConfig
 from openhands.core.exceptions import (
     AgentRuntimeDisconnectedError,
@@ -1059,8 +1060,20 @@ fi
         ):
             return
 
+        artifactory_config = getattr(self.config, 'artifactory', None)
+        install_url = getattr(artifactory_config, 'cli_install_url_value', None)
+        if callable(install_url):
+            install_url = install_url()
+        elif artifactory_config and hasattr(artifactory_config, 'cli_install_url'):
+            raw_url = getattr(artifactory_config, 'cli_install_url', None)
+            install_url = (raw_url or '').strip()
+        else:
+            install_url = ''
+
+        normalized_install_url = install_url or DEFAULT_JFROG_CLI_INSTALL_URL
+
         install_commands = [
-            'curl -fL https://getcli.jfrog.io | sh',
+            f'curl -fL {shlex.quote(normalized_install_url)} | sh',
             'if [ -f jfrog ]; then mv -f jfrog /usr/local/bin/jfrog; fi',
             'if [ -f jfrog.exe ]; then mv -f jfrog.exe /usr/local/bin/jfrog; fi',
             'chmod +x /usr/local/bin/jfrog || true',
