@@ -196,6 +196,11 @@ class ProviderHandler:
     ) -> SecretStr | None:
         """Get latest token from service"""
         try:
+            logger.debug(
+                'Requesting latest provider token provider=%s sid_present=%s',
+                provider,
+                bool(self.sid),
+            )
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     self.REFRESH_TOKEN_URL,
@@ -205,8 +210,25 @@ class ProviderHandler:
                     params={'provider': provider.value, 'sid': self.sid},
                 )
 
+            redacted_headers = {
+                key: '***'
+                if key.lower() in {'set-cookie', 'authorization', 'cookie'}
+                else value
+                for key, value in resp.headers.items()
+            }
+            logger.debug(
+                'Latest provider token response status=%s headers=%s',
+                resp.status_code,
+                redacted_headers,
+            )
+
             resp.raise_for_status()
             data = TokenResponse.model_validate_json(resp.text)
+            logger.debug(
+                'Successfully refreshed provider token provider=%s has_token=%s',
+                provider,
+                bool(data.token),
+            )
             return SecretStr(data.token)
 
         except Exception as e:

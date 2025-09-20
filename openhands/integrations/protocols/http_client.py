@@ -1,7 +1,9 @@
 """HTTP Client Protocol for Git Service Integrations."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Any
+import time
 
 from httpx import AsyncClient, HTTPError, HTTPStatusError
 from pydantic import SecretStr
@@ -70,9 +72,62 @@ class HTTPClient(ABC):
         method: RequestMethod = RequestMethod.GET,
     ):
         """Execute an HTTP request using the provided client."""
-        if method == RequestMethod.POST:
-            return await client.post(url, headers=headers, json=params)
-        return await client.get(url, headers=headers, params=params)
+        sanitized_headers = self._redact_headers(headers)
+        sanitized_params = (
+            self._sanitize_for_logging(params) if params is not None else None
+        )
+        logger.debug(
+            '[%s] Preparing %s request to %s headers=%s params=%s',
+            self.provider,
+            method.value,
+            url,
+            sanitized_headers,
+            sanitized_params,
+        )
+
+        start_time = time.perf_counter()
+        try:
+            if method == RequestMethod.POST:
+                response = await client.post(url, headers=headers, json=params)
+            else:
+                response = await client.get(url, headers=headers, params=params)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - start_time) * 1000
+            logger.debug(
+                '[%s] HTTP %s %s failed after %.2fms error=%s',
+                self.provider,
+                method.value,
+                url,
+                duration_ms,
+                exc,
+            )
+            raise
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        response_headers: dict[str, Any] = {}
+        raw_headers = getattr(response, 'headers', None)
+        if isinstance(raw_headers, Mapping):
+            response_headers = dict(raw_headers)
+        elif raw_headers is not None:
+            logger.debug(
+                '[%s] Response headers not logged due to unsupported type=%s',
+                self.provider,
+                type(raw_headers),
+            )
+        redacted_response_headers = self._redact_headers(response_headers)
+        response_preview = self._get_response_preview(response)
+        logger.debug(
+            '[%s] HTTP %s %s completed status=%s duration_ms=%.2f response_headers=%s response_preview=%s',
+            self.provider,
+            method.value,
+            url,
+            response.status_code,
+            duration_ms,
+            redacted_response_headers,
+            response_preview,
+        )
+
+        return response
 
     def handle_http_status_error(
         self, e: HTTPStatusError
@@ -97,3 +152,49 @@ class HTTPClient(ABC):
         """Handle general HTTP errors."""
         logger.warning(f'HTTP error on {self.provider} API: {type(e).__name__} : {e}')
         return UnknownException(f'HTTP error {type(e).__name__} : {e}')
+
+    def _sanitize_for_logging(self, data: Any) -> Any:
+        """Redact sensitive values while keeping structure for debug logs."""
+        if isinstance(data, SecretStr):
+            return '***'
+        if isinstance(data, Mapping):
+            return {k: self._sanitize_for_logging(v) for k, v in data.items()}
+        if isinstance(data, list):
+            return [self._sanitize_for_logging(item) for item in data]
+        if isinstance(data, tuple):
+            return tuple(self._sanitize_for_logging(item) for item in data)
+        if isinstance(data, set):
+            return [self._sanitize_for_logging(item) for item in data]
+        return data
+
+    def _redact_headers(self, headers: Mapping[str, Any]) -> dict[str, Any]:
+        """Mask sensitive header values such as authorization tokens."""
+        sensitive_keywords = ('authorization', 'token', 'secret', 'cookie')
+        redacted: dict[str, Any] = {}
+        for key, value in headers.items():
+            if isinstance(key, str) and any(
+                keyword in key.lower() for keyword in sensitive_keywords
+            ):
+                redacted[key] = '***'
+            else:
+                redacted[key] = self._sanitize_for_logging(value)
+        return redacted
+
+    def _get_response_preview(self, response: Any) -> str:
+        """Return a truncated, log-safe preview of the HTTP response body."""
+        try:
+            text = response.text  # type: ignore[assignment]
+        except Exception:
+            return '<unavailable>'
+
+        if text is None:
+            return '<empty>'
+
+        if not isinstance(text, str):
+            return '<unavailable>'
+
+        sanitized = text.replace('\n', '\\n')
+        limit = 500
+        if len(sanitized) > limit:
+            return f"{sanitized[:limit]}... [truncated]"
+        return sanitized
