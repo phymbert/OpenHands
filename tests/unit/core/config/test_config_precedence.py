@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -398,3 +399,32 @@ def test_load_openhands_config_env_override(monkeypatch, tmp_path):
         config_file=str(explicit_config_file)
     )
     assert config_with_explicit_path.max_iterations == 321
+
+
+def test_load_openhands_config_logs_toml_when_debug(monkeypatch, tmp_path):
+    """Debug logging captures the loaded configuration in TOML format."""
+
+    from openhands.core import logger as core_logger
+
+    config_file = tmp_path / 'debug_config.toml'
+    config_file.write_text('[core]\nmax_iterations = 777\n')
+    monkeypatch.setenv('CONFIG_FILE', str(config_file))
+
+    original_level = core_logger.openhands_logger.level
+    core_logger.openhands_logger.setLevel(logging.DEBUG)
+    try:
+        with patch('openhands.core.config.utils.register_custom_agents'):
+            with patch.object(core_logger.openhands_logger, 'debug') as mock_debug:
+                config = load_openhands_config()
+    finally:
+        core_logger.openhands_logger.setLevel(original_level)
+
+    assert config.max_iterations == 777
+
+    debug_calls = [
+        call for call in mock_debug.call_args_list
+        if call.args and call.args[0].startswith('Loaded OpenHands configuration (TOML):')
+    ]
+    assert debug_calls, 'Expected configuration TOML debug log to be emitted.'
+    _, logged_toml = debug_calls[0].args
+    assert 'max_iterations = 777' in logged_toml

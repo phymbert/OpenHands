@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 import pathlib
 import platform
@@ -837,6 +838,23 @@ def load_openhands_config(
     if set_logging_levels:
         logger.DEBUG = config.debug
         logger.DISABLE_COLOR_PRINTING = config.disable_color
+    if (
+        logger.openhands_logger.isEnabledFor(logging.DEBUG)
+        or config.debug
+        or logger.DEBUG
+    ):
+        try:
+            config_as_toml = toml.dumps(
+                config.model_dump(mode='json', exclude_none=True)
+            ).strip()
+            logger.openhands_logger.debug(
+                'Loaded OpenHands configuration (TOML):\n%s', config_as_toml
+            )
+        except (TypeError, ValueError) as exc:
+            logger.openhands_logger.debug(
+                'Failed to serialize configuration to TOML for debug logging: %s',
+                exc,
+            )
     return config
 
 
