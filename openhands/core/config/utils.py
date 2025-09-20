@@ -36,6 +36,7 @@ from openhands.utils.import_utils import get_impl
 
 JWT_SECRET = '.jwt_secret'
 CONFIG_FILE_ENV_VAR = 'CONFIG_FILE'
+_last_logged_config_toml: str | None = None
 load_dotenv()
 
 
@@ -847,14 +848,18 @@ def load_openhands_config(
             config_as_toml = toml.dumps(
                 config.model_dump(mode='json', exclude_none=True)
             ).strip()
-            logger.openhands_logger.debug(
-                'Loaded OpenHands configuration (TOML):\n%s', config_as_toml
-            )
         except (TypeError, ValueError) as exc:
             logger.openhands_logger.debug(
                 'Failed to serialize configuration to TOML for debug logging: %s',
                 exc,
             )
+        else:
+            global _last_logged_config_toml
+            if _last_logged_config_toml != config_as_toml:
+                logger.openhands_logger.debug(
+                    'Loaded OpenHands configuration (TOML):\n%s', config_as_toml
+                )
+                _last_logged_config_toml = config_as_toml
     return config
 
 
