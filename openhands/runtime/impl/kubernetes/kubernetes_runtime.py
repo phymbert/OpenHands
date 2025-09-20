@@ -280,6 +280,7 @@ class KubernetesRuntime(ActionExecutionClient):
     def _attach_to_pod(self):
         """Attach to an existing pod."""
         try:
+            self._wait_until_scheduled()
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
             )
@@ -295,9 +296,49 @@ class KubernetesRuntime(ActionExecutionClient):
             self.log('info', f'Successfully attached to pod {self.pod_name}')
             return True
 
+        except TimeoutError as e:
+            self.log('error', f'Failed to attach to pod: {e}')
+            raise AgentRuntimeDisconnectedError(
+                f'Failed to attach to pod {self.pod_name}: {e}'
+            ) from e
         except client.rest.ApiException as e:
             self.log('error', f'Failed to attach to pod: {e}')
             raise
+
+    @tenacity.retry(
+        stop=tenacity.stop_after_delay(300) | stop_if_should_exit(),
+        retry=tenacity.retry_if_exception_type(TimeoutError),
+        reraise=True,
+        wait=tenacity.wait_fixed(2),
+    )
+    def _wait_until_scheduled(self):
+        """Wait until the pod is scheduled by Kubernetes."""
+        self.log('info', f'Checking if pod {self.pod_name} is scheduled in Kubernetes')
+        try:
+            pod = self.k8s_client.read_namespaced_pod(
+                name=self.pod_name, namespace=self._k8s_namespace
+            )
+        except client.rest.ApiException as e:
+            if e.status == 404:
+                self.log('info', f'Pod {self.pod_name} not found yet.')
+                raise TimeoutError(
+                    f'Pod {self.pod_name} has not been created in Kubernetes yet.'
+                ) from e
+            raise
+
+        pod_status = pod.status
+        if pod_status and pod_status.conditions:
+            for condition in pod_status.conditions:
+                if condition.type == 'PodScheduled' and condition.status == 'True':
+                    self.log('info', f'Pod {self.pod_name} is scheduled!')
+                    return True
+
+        phase = pod_status.phase if pod_status else 'Unknown'
+        self.log(
+            'info',
+            f'Pod {self.pod_name} is not scheduled yet. Current phase: {phase}',
+        )
+        raise TimeoutError(f'Pod {self.pod_name} is not scheduled yet.')
 
     @tenacity.retry(
         stop=tenacity.stop_after_delay(300) | stop_if_should_exit(),
