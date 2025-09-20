@@ -1,5 +1,6 @@
 from functools import lru_cache
-from typing import Callable
+from time import monotonic, sleep
+from typing import Any, Callable
 from uuid import UUID
 
 import tenacity
@@ -528,7 +529,28 @@ class KubernetesRuntime(ActionExecutionClient):
         )
 
         # Set security context for the container
-        security_context = V1SecurityContext(privileged=self._k8s_config.privileged)
+        security_context_kwargs: dict[str, Any] = {
+            'privileged': self._k8s_config.privileged
+        }
+
+        if self._k8s_config.allow_privilege_escalation is not None:
+            security_context_kwargs[
+                'allow_privilege_escalation'
+            ] = self._k8s_config.allow_privilege_escalation
+        if self._k8s_config.read_only_root_filesystem is not None:
+            security_context_kwargs[
+                'read_only_root_filesystem'
+            ] = self._k8s_config.read_only_root_filesystem
+        if self._k8s_config.run_as_non_root is not None:
+            security_context_kwargs['run_as_non_root'] = (
+                self._k8s_config.run_as_non_root
+            )
+        if self._k8s_config.run_as_user is not None:
+            security_context_kwargs['run_as_user'] = self._k8s_config.run_as_user
+        if self._k8s_config.run_as_group is not None:
+            security_context_kwargs['run_as_group'] = self._k8s_config.run_as_group
+
+        security_context = V1SecurityContext(**security_context_kwargs)
 
         # Create the container definition
         container = V1Container(
@@ -624,6 +646,46 @@ class KubernetesRuntime(ActionExecutionClient):
                 return False
             self.log('error', f'Error checking PVC existence: {e}')
 
+    def _wait_for_pvc_bound(
+        self,
+        pvc_name: str,
+        *,
+        timeout_seconds: int = 120,
+        poll_interval_seconds: int = 2,
+    ) -> None:
+        """Wait until the PVC is bound before creating the pod."""
+
+        deadline = monotonic() + timeout_seconds
+        logged_waiting_message = False
+
+        while monotonic() < deadline:
+            try:
+                pvc = self.k8s_client.read_namespaced_persistent_volume_claim(
+                    name=pvc_name,
+                    namespace=self._k8s_namespace,
+                )
+            except client.rest.ApiException as e:
+                if e.status == 404:
+                    sleep(poll_interval_seconds)
+                    continue
+                raise
+
+            phase = getattr(getattr(pvc, 'status', None), 'phase', None)
+            if phase == 'Bound':
+                if logged_waiting_message:
+                    self.log('info', f'PVC {pvc_name} is now bound.')
+                return
+
+            if not logged_waiting_message:
+                self.log('info', f'Waiting for PVC {pvc_name} to be bound (current phase: {phase}).')
+                logged_waiting_message = True
+            else:
+                self.log('debug', f'PVC {pvc_name} still pending (phase: {phase}).')
+
+            sleep(poll_interval_seconds)
+
+        raise TimeoutError(f'Timed out waiting for PVC {pvc_name} to be bound.')
+
     def _init_k8s_resources(self):
         """Initialize the Kubernetes resources."""
         self.log('info', 'Preparing to start pod...')
@@ -635,6 +697,7 @@ class KubernetesRuntime(ActionExecutionClient):
         service = self._get_runtime_service_manifest()
         vscode_service = self._get_vscode_service_manifest()
         pvc_manifest = self._get_pvc_manifest()
+        pvc_name = self._get_pvc_name(self.pod_name)
         ingress = self._get_vscode_ingress_manifest()
 
         # Create the pod in Kubernetes
@@ -644,7 +707,8 @@ class KubernetesRuntime(ActionExecutionClient):
                 self.k8s_client.create_namespaced_persistent_volume_claim(
                     namespace=self._k8s_namespace, body=pvc_manifest
                 )
-                self.log('info', f'Created PVC {self._get_pvc_name(self.pod_name)}')
+                self.log('info', f'Created PVC {pvc_name}')
+            self._wait_for_pvc_bound(pvc_name)
             self.k8s_client.create_namespaced_pod(
                 namespace=self._k8s_namespace, body=pod
             )
@@ -677,6 +741,9 @@ class KubernetesRuntime(ActionExecutionClient):
 
         except client.rest.ApiException as e:
             self.log('error', f'Failed to create pod and services: {e}')
+            raise
+        except TimeoutError as e:
+            self.log('error', str(e))
             raise
         except RuntimeError as e:
             self.log('error', f'Port forwarding failed: {e}')
