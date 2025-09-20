@@ -12,6 +12,10 @@ from pydantic import (
 )
 from pydantic.json import pydantic_encoder
 
+from openhands.core.config.artifactory_config import (
+    ArtifactoryConfig,
+    ArtifactoryRepositoryType,
+)
 from openhands.core.config.llm_config import LLMConfig
 from openhands.core.config.mcp_config import MCPConfig
 from openhands.core.config.utils import load_openhands_config
@@ -49,12 +53,15 @@ class Settings(BaseModel):
     email_verified: bool | None = None
     git_user_name: str | None = None
     git_user_email: str | None = None
-
-    model_config = ConfigDict(
-        validate_assignment=True,
+    artifactory_host: str | None = None
+    artifactory_api_key: SecretStr | None = None
+    artifactory_repositories: dict[ArtifactoryRepositoryType, str] = Field(
+        default_factory=dict
     )
 
-    @field_serializer('llm_api_key', 'search_api_key')
+    model_config = ConfigDict(validate_assignment=True, use_enum_values=True)
+
+    @field_serializer('llm_api_key', 'search_api_key', 'artifactory_api_key')
     def api_key_serializer(self, api_key: SecretStr | None, info: SerializationInfo):
         """Custom serializer for API keys.
 
@@ -125,6 +132,52 @@ class Settings(BaseModel):
         """Force invalidate secret store"""
         return {'provider_tokens': {}}
 
+    @field_validator('artifactory_repositories', mode='before')
+    @classmethod
+    def normalize_artifactory_repositories(
+        cls, repositories: dict | None
+    ) -> dict[ArtifactoryRepositoryType, str]:
+        if repositories is None:
+            return {}
+        if not isinstance(repositories, dict):
+            raise ValueError('artifactory_repositories must be a mapping')
+
+        normalized: dict[ArtifactoryRepositoryType, str] = {}
+        for key, value in repositories.items():
+            if value is None:
+                continue
+            repo_value = str(value).strip()
+            if not repo_value:
+                continue
+            try:
+                repo_type = (
+                    key
+                    if isinstance(key, ArtifactoryRepositoryType)
+                    else ArtifactoryRepositoryType(str(key))
+                )
+            except ValueError:
+                continue
+            normalized[repo_type] = repo_value
+        return normalized
+
+    @field_serializer('artifactory_repositories')
+    def serialize_artifactory_repositories(
+        self,
+        repositories: dict[ArtifactoryRepositoryType, str],
+        info: SerializationInfo,
+    ) -> dict[str, str]:
+        serialized: dict[str, str] = {}
+        for repo_type, repo_key in repositories.items():
+            if not repo_key:
+                continue
+            key = (
+                repo_type.value
+                if isinstance(repo_type, ArtifactoryRepositoryType)
+                else str(repo_type)
+            )
+            serialized[key] = repo_key
+        return serialized
+
     @staticmethod
     def from_config() -> Settings | None:
         app_config = load_openhands_config()
@@ -139,6 +192,7 @@ class Settings(BaseModel):
         if hasattr(app_config, 'mcp'):
             mcp_config = app_config.mcp
 
+        artifactory_config: ArtifactoryConfig = app_config.artifactory
         settings = Settings(
             language='en',
             agent=app_config.default_agent,
@@ -152,6 +206,9 @@ class Settings(BaseModel):
             mcp_config=mcp_config,
             search_api_key=app_config.search_api_key,
             max_budget_per_task=app_config.max_budget_per_task,
+            artifactory_host=artifactory_config.host,
+            artifactory_api_key=artifactory_config.api_key,
+            artifactory_repositories=artifactory_config.repositories,
         )
         return settings
 
@@ -163,7 +220,24 @@ class Settings(BaseModel):
         """
         # Get config.toml settings
         config_settings = Settings.from_config()
-        if not config_settings or not config_settings.mcp_config:
+        if not config_settings:
+            return self
+
+        if config_settings.artifactory_host and not self.artifactory_host:
+            self.artifactory_host = config_settings.artifactory_host
+
+        if config_settings.artifactory_api_key:
+            if not self.artifactory_api_key or not self.artifactory_api_key.get_secret_value().strip():
+                self.artifactory_api_key = config_settings.artifactory_api_key
+
+        if config_settings.artifactory_repositories:
+            merged_repositories: dict[ArtifactoryRepositoryType, str] = dict(
+                config_settings.artifactory_repositories
+            )
+            merged_repositories.update(self.artifactory_repositories)
+            self.artifactory_repositories = merged_repositories
+
+        if not config_settings.mcp_config:
             return self
 
         # If stored settings don't have MCP config, use config.toml MCP config

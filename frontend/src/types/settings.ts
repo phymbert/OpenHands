@@ -7,6 +7,15 @@ export const ProviderOptions = {
 
 export type Provider = keyof typeof ProviderOptions;
 
+export const ArtifactoryRepositoryTypes = {
+  python: "python",
+  javascript: "javascript",
+  java: "java",
+  go: "go",
+} as const;
+
+export type ArtifactoryRepositoryType = keyof typeof ArtifactoryRepositoryTypes;
+
 export type ProviderToken = {
   token: string;
   host: string | null;
@@ -61,6 +70,9 @@ export type Settings = {
   EMAIL_VERIFIED?: boolean;
   GIT_USER_NAME?: string;
   GIT_USER_EMAIL?: string;
+  ARTIFACTORY_HOST?: string;
+  ARTIFACTORY_API_KEY_SET?: boolean;
+  ARTIFACTORY_REPOSITORIES: Partial<Record<ArtifactoryRepositoryType, string>>;
 };
 
 export type PostSettings = Settings & {
@@ -68,4 +80,5 @@ export type PostSettings = Settings & {
   llm_api_key?: string | null;
   search_api_key?: string;
   mcp_config?: MCPConfig;
+  artifactory_api_key?: string | null;
 };

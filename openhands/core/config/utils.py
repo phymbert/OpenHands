@@ -21,6 +21,7 @@ from openhands.core.config.condenser_config import (
     condenser_config_from_toml_section,
     create_condenser_config,
 )
+from openhands.core.config.artifactory_config import ArtifactoryConfig
 from openhands.core.config.extended_config import ExtendedConfig
 from openhands.core.config.kubernetes_config import KubernetesConfig
 from openhands.core.config.llm_config import LLMConfig
@@ -187,6 +188,18 @@ def load_from_toml(cfg: OpenHandsConfig, toml_file: str = 'config.toml') -> None
         else:
             logger.openhands_logger.warning(
                 f'Unknown config key "{key}" in [core] section'
+            )
+
+    if 'artifactory' in toml_config:
+        try:
+            cfg.artifactory = ArtifactoryConfig.model_validate(
+                toml_config['artifactory']
+            )
+        except ValidationError as e:
+            logger.openhands_logger.warning(
+                'Cannot parse [artifactory] config from toml, '
+                'values have not been applied.\n'
+                f'Error: {e}'
             )
 
     # Process agent section if present

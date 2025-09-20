@@ -93,8 +93,10 @@ def test_settings_handles_sensitive_data():
 def test_convert_to_settings():
     settings_with_token_data = Settings(
         llm_api_key='test-key',
+        artifactory_api_key='art-key',
     )
 
     settings = convert_to_settings(settings_with_token_data)
 
     assert settings.llm_api_key.get_secret_value() == 'test-key'
+    assert settings.artifactory_api_key.get_secret_value() == 'art-key'

@@ -93,6 +93,22 @@
 # Maximum age of conversations in seconds before they are automatically closed
 #conversation_max_age_seconds = 864000  # 10 days
 
+############################## Artifactory ###################################
+# Configure JFrog Artifactory integration for dependency management
+##############################################################################
+[artifactory]
+# Base URL for the Artifactory instance (e.g. "https://example.jfrog.io/artifactory")
+#host = ""
+
+# API key used for authenticating against the Artifactory instance
+#api_key = ""
+
+# Identifier used when configuring the jfrog CLI (defaults to "openhands-artifactory")
+#server_id = "openhands-artifactory"
+
+# Repository keys per package type (leave empty to skip configuring that type)
+#repositories = { python = "", javascript = "", java = "", go = "" }
+
 #################################### LLM #####################################
 # Configuration for LLM models (group name starts with 'llm')
 # use 'llm' for the default LLM config

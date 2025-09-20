@@ -31,6 +31,9 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   GIT_USER_NAME: "openhands",
   GIT_USER_EMAIL: "openhands@all-hands.dev",
+  ARTIFACTORY_HOST: "",
+  ARTIFACTORY_API_KEY_SET: false,
+  ARTIFACTORY_REPOSITORIES: {},
 };
 
 /**

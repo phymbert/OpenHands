@@ -68,11 +68,16 @@ async def load_settings(
             and bool(settings.llm_api_key),
             search_api_key_set=settings.search_api_key is not None
             and bool(settings.search_api_key),
+            artifactory_api_key_set=(
+                settings.artifactory_api_key is not None
+                and bool(settings.artifactory_api_key.get_secret_value().strip())
+            ),
             provider_tokens_set=provider_tokens_set,
         )
         settings_with_token_data.llm_api_key = None
         settings_with_token_data.search_api_key = None
         settings_with_token_data.sandbox_api_key = None
+        settings_with_token_data.artifactory_api_key = None
         return settings_with_token_data
     except Exception as e:
         logger.warning(f'Invalid token: {e}')
@@ -122,6 +127,25 @@ async def store_llm_settings(
         # Keep existing search API key if not provided
         if settings.search_api_key is None:
             settings.search_api_key = existing_settings.search_api_key
+
+        if (
+            settings.artifactory_host is None
+            and 'artifactory_host' not in settings.model_fields_set
+        ):
+            settings.artifactory_host = existing_settings.artifactory_host
+
+        if (
+            settings.artifactory_api_key is None
+            and 'artifactory_api_key' not in settings.model_fields_set
+        ):
+            settings.artifactory_api_key = existing_settings.artifactory_api_key
+
+        if 'artifactory_repositories' not in settings.model_fields_set:
+            settings.artifactory_repositories = (
+                existing_settings.artifactory_repositories.copy()
+                if existing_settings.artifactory_repositories
+                else {}
+            )
 
     return settings
 
@@ -205,6 +229,9 @@ def convert_to_settings(settings_with_token_data: Settings) -> Settings:
     # Convert the API keys to `SecretStr` instances
     filtered_settings_data['llm_api_key'] = settings_with_token_data.llm_api_key
     filtered_settings_data['search_api_key'] = settings_with_token_data.search_api_key
+    filtered_settings_data[
+        'artifactory_api_key'
+    ] = settings_with_token_data.artifactory_api_key
 
     # Create a new Settings instance
     settings = Settings(**filtered_settings_data)

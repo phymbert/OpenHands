@@ -18,6 +18,18 @@ import { retrieveAxiosErrorMessage } from "#/utils/retrieve-axios-error-message"
 import { AppSettingsInputsSkeleton } from "#/components/features/settings/app-settings/app-settings-inputs-skeleton";
 import { useConfig } from "#/hooks/query/use-config";
 import { parseMaxBudgetPerTask } from "#/utils/settings-utils";
+import type { PostSettings } from "#/types/settings";
+import {
+  ArtifactoryRepositoryType,
+  ArtifactoryRepositoryTypes,
+} from "#/types/settings";
+
+const ARTIFACTORY_REPO_LABELS: Record<ArtifactoryRepositoryType, I18nKey> = {
+  python: I18nKey.SETTINGS$ARTIFACTORY_REPO_PYTHON,
+  javascript: I18nKey.SETTINGS$ARTIFACTORY_REPO_JAVASCRIPT,
+  java: I18nKey.SETTINGS$ARTIFACTORY_REPO_JAVA,
+  go: I18nKey.SETTINGS$ARTIFACTORY_REPO_GO,
+};
 
 function AppSettingsScreen() {
   const { t } = useTranslation();
@@ -48,6 +60,44 @@ function AppSettingsScreen() {
     React.useState(false);
   const [gitUserEmailHasChanged, setGitUserEmailHasChanged] =
     React.useState(false);
+  const [artifactoryHostHasChanged, setArtifactoryHostHasChanged] =
+    React.useState(false);
+  const [artifactoryApiKeyHasChanged, setArtifactoryApiKeyHasChanged] =
+    React.useState(false);
+  const [artifactoryClearApiKey, setArtifactoryClearApiKey] =
+    React.useState(false);
+  const [artifactoryApiKeyInputValue, setArtifactoryApiKeyInputValue] =
+    React.useState("");
+  const [artifactoryRepoChanges, setArtifactoryRepoChanges] = React.useState<
+    Record<ArtifactoryRepositoryType, boolean>
+  >({
+    python: false,
+    javascript: false,
+    java: false,
+    go: false,
+  });
+
+  const artifactoryReposHaveChanged = React.useMemo(
+    () => Object.values(artifactoryRepoChanges).some(Boolean),
+    [artifactoryRepoChanges],
+  );
+
+  React.useEffect(() => {
+    setArtifactoryHostHasChanged(false);
+    setArtifactoryApiKeyHasChanged(false);
+    setArtifactoryClearApiKey(false);
+    setArtifactoryApiKeyInputValue("");
+    setArtifactoryRepoChanges({
+      python: false,
+      javascript: false,
+      java: false,
+      go: false,
+    });
+  }, [
+    settings?.ARTIFACTORY_HOST,
+    settings?.ARTIFACTORY_API_KEY_SET,
+    settings?.ARTIFACTORY_REPOSITORIES,
+  ]);
 
   const formAction = (formData: FormData) => {
     const languageLabel = formData.get("language-input")?.toString();
@@ -80,37 +130,78 @@ function AppSettingsScreen() {
       formData.get("git-user-email-input")?.toString() ||
       DEFAULT_SETTINGS.GIT_USER_EMAIL;
 
-    saveSettings(
-      {
-        LANGUAGE: language,
-        user_consents_to_analytics: enableAnalytics,
-        ENABLE_SOUND_NOTIFICATIONS: enableSoundNotifications,
-        ENABLE_PROACTIVE_CONVERSATION_STARTERS: enableProactiveConversations,
-        ENABLE_SOLVABILITY_ANALYSIS: enableSolvabilityAnalysis,
-        MAX_BUDGET_PER_TASK: maxBudgetPerTask,
-        GIT_USER_NAME: gitUserName,
-        GIT_USER_EMAIL: gitUserEmail,
+    const artifactoryHost =
+      formData.get("artifactory-host-input")?.toString().trim() || "";
+    const artifactoryApiKeyInput =
+      formData.get("artifactory-api-key-input")?.toString().trim() || "";
+
+    const artifactoryRepositories: Partial<
+      Record<ArtifactoryRepositoryType, string>
+    > = {};
+    Object.values(ArtifactoryRepositoryTypes).forEach((type) => {
+      const repoValue =
+        formData.get(`artifactory-repo-${type}`)?.toString().trim() || "";
+      if (repoValue) {
+        artifactoryRepositories[type as ArtifactoryRepositoryType] = repoValue;
+      }
+    });
+
+    const shouldSendArtifactoryKey =
+      artifactoryClearApiKey || artifactoryApiKeyHasChanged;
+
+    let artifactoryApiKeyPayload: string | undefined;
+    if (artifactoryClearApiKey) {
+      artifactoryApiKeyPayload = "";
+    } else if (artifactoryApiKeyHasChanged) {
+      artifactoryApiKeyPayload = artifactoryApiKeyInput;
+    }
+
+    const payload: Partial<PostSettings> = {
+      LANGUAGE: language,
+      user_consents_to_analytics: enableAnalytics,
+      ENABLE_SOUND_NOTIFICATIONS: enableSoundNotifications,
+      ENABLE_PROACTIVE_CONVERSATION_STARTERS: enableProactiveConversations,
+      ENABLE_SOLVABILITY_ANALYSIS: enableSolvabilityAnalysis,
+      MAX_BUDGET_PER_TASK: maxBudgetPerTask,
+      GIT_USER_NAME: gitUserName,
+      GIT_USER_EMAIL: gitUserEmail,
+      ARTIFACTORY_HOST: artifactoryHost,
+      ARTIFACTORY_REPOSITORIES: artifactoryRepositories,
+    };
+
+    if (shouldSendArtifactoryKey) {
+      payload.artifactory_api_key = artifactoryApiKeyPayload ?? "";
+    }
+
+    saveSettings(payload, {
+      onSuccess: () => {
+        handleCaptureConsent(enableAnalytics);
+        displaySuccessToast(t(I18nKey.SETTINGS$SAVED));
       },
-      {
-        onSuccess: () => {
-          handleCaptureConsent(enableAnalytics);
-          displaySuccessToast(t(I18nKey.SETTINGS$SAVED));
-        },
-        onError: (error) => {
-          const errorMessage = retrieveAxiosErrorMessage(error);
-          displayErrorToast(errorMessage || t(I18nKey.ERROR$GENERIC));
-        },
-        onSettled: () => {
-          setLanguageInputHasChanged(false);
-          setAnalyticsSwitchHasChanged(false);
-          setSoundNotificationsSwitchHasChanged(false);
-          setProactiveConversationsSwitchHasChanged(false);
-          setMaxBudgetPerTaskHasChanged(false);
-          setGitUserNameHasChanged(false);
-          setGitUserEmailHasChanged(false);
-        },
+      onError: (error) => {
+        const errorMessage = retrieveAxiosErrorMessage(error);
+        displayErrorToast(errorMessage || t(I18nKey.ERROR$GENERIC));
       },
-    );
+      onSettled: () => {
+        setLanguageInputHasChanged(false);
+        setAnalyticsSwitchHasChanged(false);
+        setSoundNotificationsSwitchHasChanged(false);
+        setProactiveConversationsSwitchHasChanged(false);
+        setMaxBudgetPerTaskHasChanged(false);
+        setGitUserNameHasChanged(false);
+        setGitUserEmailHasChanged(false);
+        setArtifactoryHostHasChanged(false);
+        setArtifactoryApiKeyHasChanged(false);
+        setArtifactoryClearApiKey(false);
+        setArtifactoryApiKeyInputValue("");
+        setArtifactoryRepoChanges({
+          python: false,
+          javascript: false,
+          java: false,
+          go: false,
+        });
+      },
+    });
   };
 
   const checkIfLanguageInputHasChanged = (value: string) => {
@@ -167,6 +258,29 @@ function AppSettingsScreen() {
     setGitUserEmailHasChanged(value !== currentValue);
   };
 
+  const checkIfArtifactoryHostHasChanged = (value: string) => {
+    const currentHost = settings?.ARTIFACTORY_HOST || "";
+    setArtifactoryHostHasChanged(value !== currentHost);
+  };
+
+  const handleArtifactoryApiKeyInputChange = (value: string) => {
+    const trimmed = value.trim();
+    setArtifactoryApiKeyInputValue(value);
+    setArtifactoryApiKeyHasChanged(trimmed.length > 0);
+    if (trimmed.length > 0) {
+      setArtifactoryClearApiKey(false);
+    }
+  };
+
+  const handleArtifactoryRepoChange =
+    (type: ArtifactoryRepositoryType) => (value: string) => {
+      const currentValue = settings?.ARTIFACTORY_REPOSITORIES?.[type] || "";
+      setArtifactoryRepoChanges((prev) => ({
+        ...prev,
+        [type]: value !== currentValue,
+      }));
+    };
+
   const formIsClean =
     !languageInputHasChanged &&
     !analyticsSwitchHasChanged &&
@@ -175,7 +289,11 @@ function AppSettingsScreen() {
     !solvabilityAnalysisSwitchHasChanged &&
     !maxBudgetPerTaskHasChanged &&
     !gitUserNameHasChanged &&
-    !gitUserEmailHasChanged;
+    !gitUserEmailHasChanged &&
+    !artifactoryHostHasChanged &&
+    !artifactoryApiKeyHasChanged &&
+    !artifactoryClearApiKey &&
+    !artifactoryReposHaveChanged;
 
   const shouldBeLoading = !settings || isLoading || isPending;
 
@@ -277,6 +395,86 @@ function AppSettingsScreen() {
                 placeholder="Email for git commits"
                 className="w-full max-w-[680px]"
               />
+            </div>
+          </div>
+
+          <div className="border-t border-t-tertiary pt-6 mt-2 flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-lg font-medium">
+                {t(I18nKey.SETTINGS$ARTIFACTORY_TITLE)}
+              </h3>
+              <p className="text-xs text-tertiary">
+                {t(I18nKey.SETTINGS$ARTIFACTORY_DESCRIPTION)}
+              </p>
+            </div>
+            <SettingsInput
+              testId="artifactory-host-input"
+              name="artifactory-host-input"
+              type="text"
+              label={t(I18nKey.SETTINGS$ARTIFACTORY_HOST)}
+              defaultValue={settings.ARTIFACTORY_HOST || ""}
+              onChange={checkIfArtifactoryHostHasChanged}
+              placeholder="https://example.jfrog.io/artifactory"
+              className="w-full max-w-[680px]"
+            />
+            <SettingsInput
+              testId="artifactory-api-key-input"
+              name="artifactory-api-key-input"
+              type="password"
+              label={t(I18nKey.SETTINGS$ARTIFACTORY_API_KEY)}
+              placeholder={t(I18nKey.SETTINGS$ARTIFACTORY_API_KEY_PLACEHOLDER)}
+              onChange={handleArtifactoryApiKeyInputChange}
+              className="w-full max-w-[680px]"
+            />
+            {settings.ARTIFACTORY_API_KEY_SET && (
+              <SettingsSwitch
+                testId="clear-artifactory-api-key-switch"
+                name="clear-artifactory-api-key-switch"
+                defaultIsToggled={false}
+                onToggle={(checked) => {
+                  setArtifactoryClearApiKey(checked);
+                  if (checked) {
+                    setArtifactoryApiKeyHasChanged(true);
+                  } else {
+                    setArtifactoryApiKeyHasChanged(
+                      artifactoryApiKeyInputValue.trim().length > 0,
+                    );
+                  }
+                }}
+              >
+                {t(I18nKey.SETTINGS$ARTIFACTORY_CLEAR_KEY)}
+              </SettingsSwitch>
+            )}
+            <div className="flex flex-col gap-3">
+              <div>
+                <span className="text-sm font-medium">
+                  {t(I18nKey.SETTINGS$ARTIFACTORY_REPOSITORIES)}
+                </span>
+                <p className="text-xs text-tertiary mt-1">
+                  {t(I18nKey.SETTINGS$ARTIFACTORY_REPOSITORIES_DESCRIPTION)}
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.values(ArtifactoryRepositoryTypes).map((type) => (
+                  <SettingsInput
+                    key={type}
+                    testId={`artifactory-repo-${type}-input`}
+                    name={`artifactory-repo-${type}`}
+                    type="text"
+                    label={t(ARTIFACTORY_REPO_LABELS[type])}
+                    defaultValue={
+                      settings.ARTIFACTORY_REPOSITORIES?.[
+                        type as ArtifactoryRepositoryType
+                      ] || ""
+                    }
+                    onChange={handleArtifactoryRepoChange(
+                      type as ArtifactoryRepositoryType,
+                    )}
+                    showOptionalTag
+                    className="w-full"
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>

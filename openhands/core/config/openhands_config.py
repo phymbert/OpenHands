@@ -12,6 +12,7 @@ from openhands.core.config.config_utils import (
     OH_MAX_ITERATIONS,
     model_defaults_to_dict,
 )
+from openhands.core.config.artifactory_config import ArtifactoryConfig
 from openhands.core.config.extended_config import ExtendedConfig
 from openhands.core.config.kubernetes_config import KubernetesConfig
 from openhands.core.config.llm_config import LLMConfig
@@ -68,6 +69,7 @@ class OpenHandsConfig(BaseModel):
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     extended: ExtendedConfig = Field(default_factory=lambda: ExtendedConfig({}))
+    artifactory: ArtifactoryConfig = Field(default_factory=ArtifactoryConfig)
     runtime: str = Field(default='docker')
     file_store: str = Field(default='local')
     file_store_path: str = Field(default='~/.openhands')

@@ -35,6 +35,9 @@ export const MOCK_DEFAULT_USER_SETTINGS: ApiSettings | PostApiSettings = {
   enable_solvability_analysis: DEFAULT_SETTINGS.ENABLE_SOLVABILITY_ANALYSIS,
   user_consents_to_analytics: DEFAULT_SETTINGS.USER_CONSENTS_TO_ANALYTICS,
   max_budget_per_task: DEFAULT_SETTINGS.MAX_BUDGET_PER_TASK,
+  artifactory_host: DEFAULT_SETTINGS.ARTIFACTORY_HOST ?? null,
+  artifactory_api_key_set: DEFAULT_SETTINGS.ARTIFACTORY_API_KEY_SET ?? false,
+  artifactory_repositories: DEFAULT_SETTINGS.ARTIFACTORY_REPOSITORIES,
 };
 
 const MOCK_USER_PREFERENCES: {
