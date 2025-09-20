@@ -61,6 +61,26 @@ class KubernetesConfig(BaseModel):
         default=False,
         description='Run the runtime sandbox container in privileged mode for use with docker-in-docker',
     )
+    allow_privilege_escalation: bool | None = Field(
+        default=None,
+        description='Allow processes in the runtime sandbox container to escalate privileges',
+    )
+    read_only_root_filesystem: bool | None = Field(
+        default=None,
+        description='Mount the runtime sandbox container root filesystem as read-only',
+    )
+    run_as_non_root: bool | None = Field(
+        default=None,
+        description='Require the runtime sandbox container to run as a non-root user',
+    )
+    run_as_user: int | None = Field(
+        default=None,
+        description='Override the user ID used for the runtime sandbox container',
+    )
+    run_as_group: int | None = Field(
+        default=None,
+        description='Override the primary group ID used for the runtime sandbox container',
+    )
 
     model_config = ConfigDict(extra='forbid')
 
