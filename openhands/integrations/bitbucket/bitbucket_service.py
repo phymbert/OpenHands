@@ -1,5 +1,7 @@
 import os
 
+from typing import Literal
+
 from pydantic import SecretStr
 
 from openhands.integrations.bitbucket.service import (
@@ -43,17 +45,31 @@ class BitBucketService(
         token: SecretStr | None = None,
         external_token_manager: bool = False,
         base_domain: str | None = None,
+        bit_bucket_mode: Literal['cloud', 'server'] = 'cloud',
     ) -> None:
         self.user_id = user_id
         self.external_token_manager = external_token_manager
         self.external_auth_id = external_auth_id
         self.external_auth_token = external_auth_token
         self.base_domain = base_domain or 'bitbucket.org'
+        self.bit_bucket_mode = bit_bucket_mode
+        self.username: str | None = None
+
+        if self.bit_bucket_mode not in {'cloud', 'server'}:
+            raise ValueError(
+                f'Unsupported Bitbucket mode: {self.bit_bucket_mode}'
+            )
 
         if token:
             self.token = token
-        if base_domain:
-            self.BASE_URL = f'https://api.{base_domain}/2.0'
+            token_value = token.get_secret_value()
+            if ':' in token_value:
+                self.username = token_value.split(':', 1)[0]
+
+        if self.bit_bucket_mode == 'server':
+            self.BASE_URL = f'https://{self.base_domain}/rest/api/1.0'
+        else:
+            self.BASE_URL = f'https://api.{self.base_domain}/2.0'
 
     @property
     def provider(self) -> str:

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from openhands.core.config import LLMConfig
 from openhands.integrations.provider import ProviderType
 from openhands.resolver.interfaces.bitbucket import (
@@ -23,6 +25,7 @@ class IssueHandlerFactory:
         base_domain: str,
         issue_type: str,
         llm_config: LLMConfig,
+        bit_bucket_mode: Literal['cloud', 'server'] = 'cloud',
     ) -> None:
         self.owner = owner
         self.repo = repo
@@ -32,6 +35,7 @@ class IssueHandlerFactory:
         self.base_domain = base_domain
         self.issue_type = issue_type
         self.llm_config = llm_config
+        self.bit_bucket_mode = bit_bucket_mode
 
     def create(self) -> ServiceContextIssue | ServiceContextPR:
         if self.issue_type == 'issue':
@@ -65,6 +69,7 @@ class IssueHandlerFactory:
                         self.token,
                         self.username,
                         self.base_domain,
+                        bit_bucket_mode=self.bit_bucket_mode,
                     ),
                     self.llm_config,
                 )
@@ -101,6 +106,7 @@ class IssueHandlerFactory:
                         self.token,
                         self.username,
                         self.base_domain,
+                        bit_bucket_mode=self.bit_bucket_mode,
                     ),
                     self.llm_config,
                 )
