@@ -58,6 +58,26 @@ from openhands.utils.tenacity_stop import stop_if_should_exit
 POD_NAME_PREFIX = 'openhands-runtime-'
 POD_LABEL = 'openhands-runtime'
 
+POD_WAITING_ERROR_REASONS = {
+    'CrashLoopBackOff',
+    'ErrImagePull',
+    'ImagePullBackOff',
+    'CreateContainerConfigError',
+    'CreateContainerError',
+    'RunContainerError',
+    'InvalidImageName',
+}
+POD_TERMINATED_ERROR_REASONS = {
+    'Error',
+    'ContainerCannotRun',
+    'OOMKilled',
+}
+POD_CONDITION_ERROR_REASONS = {
+    'Unschedulable',
+    'SchedulingDisabled',
+}
+PVC_PHASE_ERROR_STATES = {'Failed', 'Lost'}
+
 
 class KubernetesRuntime(ActionExecutionClient):
     """A Kubernetes runtime for OpenHands that works with Kind.
@@ -300,6 +320,7 @@ class KubernetesRuntime(ActionExecutionClient):
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
             )
+            self._check_pod_for_errors(pod)
 
             if pod.status.phase != 'Running':
                 try:
@@ -325,6 +346,152 @@ class KubernetesRuntime(ActionExecutionClient):
             self.log('error', f'Failed to attach to pod: {e}')
             raise
 
+    def _handle_resource_error(
+        self, resource_type: str, resource_name: str, details: str
+    ) -> None:
+        message = (
+            f'{resource_type} {resource_name} encountered an unrecoverable error: {details}'
+        )
+        self.log('error', message)
+        self.log('info', 'Attempting to clean up Kubernetes resources after failure')
+        self.set_runtime_status(RuntimeStatus.ERROR_RUNTIME_DISCONNECTED, message)
+        try:
+            self._cleanup_k8s_resources(
+                namespace=self._k8s_namespace,
+                remove_pvc=False,
+                conversation_id=self.sid,
+            )
+        except Exception as cleanup_error:  # pragma: no cover - best effort cleanup
+            self.log(
+                'error',
+                'Encountered error while cleaning up Kubernetes resources after '
+                f'{resource_type} failure: {cleanup_error}',
+            )
+        raise AgentRuntimeDisconnectedError(message)
+
+    def _check_pod_for_errors(self, pod: V1Pod) -> None:
+        if not pod or not pod.status:
+            return
+
+        pod_name = pod.metadata.name if pod.metadata and pod.metadata.name else self.pod_name
+        status = pod.status
+
+        phase = getattr(status, 'phase', None)
+        if phase in {'Failed', 'Unknown'}:
+            reason = getattr(status, 'reason', '') or ''
+            message = getattr(status, 'message', '') or ''
+            details = f'phase={phase}'
+            if reason:
+                details += f', reason={reason}'
+            if message:
+                details += f', message={message}'
+            self._handle_resource_error('Pod', pod_name, details)
+
+        conditions = getattr(status, 'conditions', None) or []
+        for condition in conditions:
+            reason = getattr(condition, 'reason', '') or ''
+            condition_message = getattr(condition, 'message', '') or ''
+            condition_status = getattr(condition, 'status', '') or ''
+            condition_type = getattr(condition, 'type', '') or ''
+            if reason in POD_CONDITION_ERROR_REASONS:
+                self._handle_resource_error(
+                    'Pod',
+                    pod_name,
+                    f'{condition_type} reported reason {reason}: {condition_message}',
+                )
+            if (
+                condition_status == 'False'
+                and reason
+                and any(keyword in reason.lower() for keyword in ('error', 'fail'))
+            ):
+                self._handle_resource_error(
+                    'Pod',
+                    pod_name,
+                    f'{condition_type} condition reported {reason}: {condition_message}',
+                )
+
+        container_statuses: list[Any] = []
+        for attr in ('init_container_statuses', 'container_statuses'):
+            statuses = getattr(status, attr, None)
+            if statuses:
+                container_statuses.extend(statuses)
+
+        for container_status in container_statuses:
+            state = getattr(container_status, 'state', None)
+            if not state:
+                continue
+
+            waiting = getattr(state, 'waiting', None)
+            if waiting and waiting.reason:
+                reason = waiting.reason
+                message = waiting.message or ''
+                if reason in POD_WAITING_ERROR_REASONS or any(
+                    keyword in reason.lower() for keyword in ('error', 'fail', 'backoff')
+                ):
+                    self._handle_resource_error(
+                        'Container',
+                        getattr(container_status, 'name', 'runtime'),
+                        f'waiting due to {reason}: {message}',
+                    )
+
+            terminated = getattr(state, 'terminated', None)
+            if terminated:
+                exit_code = getattr(terminated, 'exit_code', None)
+                reason = getattr(terminated, 'reason', '') or ''
+                message = getattr(terminated, 'message', '') or ''
+                if exit_code not in (None, 0):
+                    self._handle_resource_error(
+                        'Container',
+                        getattr(container_status, 'name', 'runtime'),
+                        f'terminated with exit code {exit_code}: {message or reason}',
+                    )
+                if reason in POD_TERMINATED_ERROR_REASONS:
+                    self._handle_resource_error(
+                        'Container',
+                        getattr(container_status, 'name', 'runtime'),
+                        f'terminated due to {reason}: {message}',
+                    )
+
+    def _check_pvc_for_errors(self, pvc: V1PersistentVolumeClaim) -> None:
+        if not pvc or not pvc.status:
+            return
+
+        pvc_name = (
+            pvc.metadata.name
+            if pvc.metadata and pvc.metadata.name
+            else self._get_pvc_name(self.pod_name)
+        )
+        status = pvc.status
+
+        phase = getattr(status, 'phase', None)
+        if phase in PVC_PHASE_ERROR_STATES:
+            details = f'phase={phase}'
+            conditions = getattr(status, 'conditions', None) or []
+            if conditions:
+                condition_messages = [
+                    f"{getattr(cond, 'type', '')}: {getattr(cond, 'message', '') or getattr(cond, 'reason', '')}"
+                    for cond in conditions
+                ]
+                details += f", conditions={'; '.join(condition_messages)}"
+            self._handle_resource_error('PersistentVolumeClaim', pvc_name, details)
+
+        for condition in getattr(status, 'conditions', None) or []:
+            reason = getattr(condition, 'reason', '') or ''
+            message = getattr(condition, 'message', '') or ''
+            condition_status = getattr(condition, 'status', '') or ''
+            if (
+                reason
+                and any(keyword in reason.lower() for keyword in ('error', 'fail'))
+            ) or (
+                condition_status == 'False'
+                and any(keyword in message.lower() for keyword in ('error', 'fail'))
+            ):
+                self._handle_resource_error(
+                    'PersistentVolumeClaim',
+                    pvc_name,
+                    f'{reason or condition_status}: {message}',
+                )
+
     @tenacity.retry(
         stop=tenacity.stop_after_delay(300) | stop_if_should_exit(),
         retry=tenacity.retry_if_exception_type(TimeoutError),
@@ -338,6 +505,7 @@ class KubernetesRuntime(ActionExecutionClient):
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
             )
+            self._check_pod_for_errors(pod)
         except client.rest.ApiException as e:
             if e.status == 404:
                 self.log('debug', f'Pod {self.pod_name} not found yet.')
@@ -372,6 +540,7 @@ class KubernetesRuntime(ActionExecutionClient):
         pod = self.k8s_client.read_namespaced_pod(
             name=self.pod_name, namespace=self._k8s_namespace
         )
+        self._check_pod_for_errors(pod)
         if pod.status.phase == 'Running' and pod.status.conditions:
             for condition in pod.status.conditions:
                 if condition.type == 'Ready' and condition.status == 'True':
@@ -766,6 +935,7 @@ class KubernetesRuntime(ActionExecutionClient):
                     name=pvc_name,
                     namespace=self._k8s_namespace,
                 )
+                self._check_pvc_for_errors(pvc)
             except client.rest.ApiException as e:
                 if e.status == 404:
                     sleep(poll_interval_seconds)
