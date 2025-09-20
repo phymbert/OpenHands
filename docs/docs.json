@@ -92,6 +92,7 @@
                       "group": "Providers",
                       "pages": [
                         "usage/runtimes/docker",
+                        "usage/runtimes/kubernetes",
                         "usage/runtimes/remote",
                         "usage/runtimes/local",
                         {

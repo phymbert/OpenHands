@@ -1,0 +1,122 @@
+---
+title: Kubernetes Runtime
+description: Learn how the Kubernetes runtime provisions pods, services, and ingress resources for OpenHands and how to configure every available option.
+---
+
+## Overview
+
+The Kubernetes runtime lets OpenHands execute agent workloads inside a Kubernetes cluster instead of a local Docker
+container. It creates and manages a namespaced pod along with supporting services, persistent volumes, and ingress
+objects so that the agent can connect to the runtime server, VS Code, and any web applications exposed from inside the
+sandbox. This runtime is useful when you need to run OpenHands close to other Kubernetes workloads, reuse an existing
+cluster for isolation, or provision sandboxes with more resource controls than a single Docker host can provide.
+
+Unlike the Docker runtime, Kubernetes resources are created on demand inside your cluster. The runtime waits for the pod
+to be scheduled and ready before the agent attaches, continually monitors the pod and persistent volume claim (PVC) for
+terminal error states, and cleans up resources when the session ends or an unrecoverable error occurs.
+
+## Prerequisites
+
+Before enabling the Kubernetes runtime, make sure:
+
+- The Kubernetes Python client running the OpenHands backend can authenticate against your cluster. The runtime loads
+  in-cluster credentials first and otherwise requires a working `kubectl` configuration on the host where OpenHands runs.
+- A storage class that supports `ReadWriteOnce` PVCs is available if you plan to persist the runtime workspace across
+  sessions.
+- DNS and ingress controllers in your cluster are configured to route the generated `<session>.<ingress_domain>` host
+  to the runtime ingress if you want to access VS Code through the browser.
+
+Set the core `[core]` configuration option `runtime = "kubernetes"` (or the environment variable `RUNTIME=kubernetes`)
+to activate this runtime.
+
+## Runtime Lifecycle
+
+The Kubernetes runtime follows these steps when starting a new session:
+
+1. **Configuration load** – The runtime reads the `[kubernetes]` configuration block, caches the namespace, and selects
+   the runtime container image (falling back to `sandbox.base_container_image` when
+   `sandbox.runtime_container_image` is not provided).
+2. **Resource manifest generation** – Manifests are generated for the runtime pod, primary service, VS Code service,
+   ingress, and PVC. Each manifest includes identifying labels (`app=openhands-runtime`, `session=<conversation id>`) so
+   the runtime can locate existing resources.
+3. **PVC provisioning** – If a PVC for the session does not exist, it is created using the configured storage size and
+   class. The runtime polls until the PVC reaches the `Bound` phase before proceeding.
+4. **Pod creation and scheduling** – The runtime submits the pod manifest, then waits for Kubernetes to schedule the pod
+   (`PodScheduled` condition) before creating any services. Security context and volume mounts are applied based on the
+   configuration options listed below.
+5. **Service and ingress creation** – ClusterIP services expose the runtime HTTP API and VS Code server inside the
+   cluster, and an optional ingress routes external traffic to the VS Code service. The ingress uses TLS when
+   `ingress_tls_secret` is set and always sets an `external-dns` annotation for hostname management.
+6. **Readiness checks** – The runtime polls the pod until the `Ready` condition is reported. If the pod never becomes
+   ready or reports an error condition (image pull failures, CrashLoopBackOff, unschedulable, etc.), the runtime marks the
+   session as disconnected and triggers cleanup.
+7. **Attachment** – After the pod is ready, the base `ActionExecutionClient` initialization completes and the agent can
+   send commands to the runtime server. If you pass `attach_to_existing=True`, the runtime reuses the existing pod and
+   verifies it is still running.
+
+When the session ends, the runtime normally deletes the pod, services, and ingress but leaves the PVC intact for
+subsequent sessions. Set `sandbox.keep_runtime_alive=true` to keep the pod running after a task finishes, or delete the
+conversation in the UI/API to remove the PVC as well.
+
+## Error Handling and Cleanup
+
+The runtime continuously checks Kubernetes status objects for unrecoverable states:
+
+- Pod phases `Failed` or `Unknown`
+- Pod condition reasons such as `Unschedulable`, `SchedulingDisabled`, or any condition that reports an error/failure
+  reason
+- Container states waiting on image pull errors, back-off loops, or terminated with a non-zero exit code or reasons like
+  `OOMKilled`
+- PVC phases `Failed` or `Lost`, or PVC conditions that contain error/failure messages
+
+If any of these states appear, OpenHands marks the runtime as disconnected, logs detailed error context, and invokes the
+same cleanup routine used during normal shutdown. Cleanup removes the pod, services, and ingress and optionally deletes
+matching PVCs when triggered from the conversation deletion path.
+
+## Workspace, Networking, and VS Code Access
+
+- The primary runtime service exposes the agent HTTP API on port `8080` inside the pod. Auxiliary application ports
+  (defaults: `30082`, `30083`) are also published through the service for browser previews.
+- A dedicated service and ingress expose the VS Code server on port `8081`. The runtime constructs a session-specific
+  URL in the form `https://<session>.<ingress_domain>/?tkn=<token>&folder=<workspace>` when TLS is configured.
+- `web_hosts` returns a mapping of cluster-internal URLs to port numbers so the OpenHands UI can proxy browser requests.
+
+## Kubernetes Configuration Reference
+
+All options belong under the `[kubernetes]` section of `config.toml`. Each key also maps to an environment variable by
+uppercasing the name and prefixing it with `KUBERNETES_` (for example, `namespace` becomes `KUBERNETES_NAMESPACE`).
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `namespace` | `str` | `"default"` | Namespace that receives the pod, services, ingress, and PVC. |
+| `ingress_domain` | `str` | `"localhost"` | Base domain appended to the session ID when building VS Code ingress hostnames. |
+| `pvc_storage_size` | `str` | `"2Gi"` | Requested capacity for the session PVC. |
+| `pvc_storage_class` | `str \| null` | `null` | Storage class used when creating the PVC. |
+| `resource_cpu_request` | `str` | `"1"` | CPU request assigned to the runtime container. |
+| `resource_memory_request` | `str` | `"1Gi"` | Memory request assigned to the runtime container. |
+| `resource_memory_limit` | `str` | `"2Gi"` | Memory limit applied to the runtime container. |
+| `image_pull_secret` | `str \| null` | `null` | Name of an image pull secret to mount for private registries. |
+| `ingress_tls_secret` | `str \| null` | `null` | TLS secret name added to the ingress for HTTPS. |
+| `node_selector_key` | `str \| null` | `null` | Node selector key applied to the pod scheduling rules. |
+| `node_selector_val` | `str \| null` | `null` | Node selector value paired with `node_selector_key`. |
+| `tolerations_yaml` | `str \| null` | `null` | Raw YAML definition of additional pod tolerations. |
+| `privileged` | `bool` | `false` | Run the runtime container in privileged mode (required for Docker-in-Docker). |
+| `allow_privilege_escalation` | `bool \| null` | `null` | Explicitly allow processes in the container to gain more privileges. |
+| `read_only_root_filesystem` | `bool \| null` | `null` | Mount the container root filesystem as read-only. |
+| `run_as_non_root` | `bool \| null` | `null` | Require Kubernetes to run the container as a non-root user. |
+| `run_as_user` | `int \| null` | `null` | Override the user ID used inside the runtime container. |
+| `run_as_group` | `int \| null` | `null` | Override the primary group ID inside the runtime container. |
+| `mount_tmp_empty_dir` | `bool` | `false` | Mount `/tmp` as an ephemeral `emptyDir` volume instead of persisting it on the PVC. |
+| `enable_memory_dshm_volume` | `bool` | `false` | Mount `/dev/shm` as an in-memory `emptyDir` to increase shared memory. |
+| `memory_dshm_volume_size_limit` | `str \| null` | `null` | Optional size limit applied to the `/dev/shm` `emptyDir` when enabled. |
+
+### Additional Runtime Settings
+
+These global sandbox settings influence the Kubernetes runtime but live under other configuration sections:
+
+- `sandbox.runtime_container_image` – Overrides the container image used for the pod.
+- `sandbox.keep_runtime_alive` – Skips automatic cleanup after a session finishes so the pod stays running.
+- `sandbox.workspace_mount_path_in_sandbox` – Controls the workspace path passed to VS Code links.
+
+Refer to the [Configuration Options reference](../configuration-options#kubernetes-configuration) for details on how to
+set these fields in `config.toml` or environment variables.
