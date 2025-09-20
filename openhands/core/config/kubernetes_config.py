@@ -81,6 +81,23 @@ class KubernetesConfig(BaseModel):
         default=None,
         description='Override the primary group ID used for the runtime sandbox container',
     )
+    mount_tmp_empty_dir: bool = Field(
+        default=False,
+        description='Mount /tmp inside the runtime sandbox as an ephemeral emptyDir volume',
+    )
+    enable_memory_dshm_volume: bool = Field(
+        default=False,
+        description=(
+            'Mount /dev/shm as an in-memory emptyDir volume to increase shared memory capacity'
+        ),
+    )
+    memory_dshm_volume_size_limit: str | None = Field(
+        default=None,
+        description=(
+            'Optional size limit for the /dev/shm emptyDir volume (e.g. "1Gi"). Only applied when '
+            'enable_memory_dshm_volume is true.'
+        ),
+    )
 
     model_config = ConfigDict(extra='forbid')
 
