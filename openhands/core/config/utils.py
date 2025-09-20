@@ -34,6 +34,7 @@ from openhands.storage.files import FileStore
 from openhands.utils.import_utils import get_impl
 
 JWT_SECRET = '.jwt_secret'
+CONFIG_FILE_ENV_VAR = 'OPENHANDS_CONFIG_FILE'
 load_dotenv()
 
 
@@ -825,6 +826,9 @@ def load_openhands_config(
         set_logging_levels: Whether to set the global variables for logging levels.
         config_file: Path to the config file. Defaults to 'config.toml' in the current directory.
     """
+    env_config_file = os.environ.get(CONFIG_FILE_ENV_VAR)
+    if env_config_file and config_file == 'config.toml':
+        config_file = os.path.expanduser(env_config_file)
     config = OpenHandsConfig()
     load_from_toml(config, config_file)
     load_from_env(config, os.environ)

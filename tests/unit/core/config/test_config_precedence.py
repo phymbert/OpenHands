@@ -7,6 +7,7 @@ from openhands.core.config import (
     OH_MAX_ITERATIONS,
     OpenHandsConfig,
     get_llm_config_arg,
+    load_openhands_config,
     setup_config_from_args,
 )
 
@@ -378,3 +379,22 @@ def test_cli_args_none_uses_config_toml_values():
     # Verify config.toml values are preserved when CLI args are None
     assert config.default_agent == 'ConfigTomlAgent'
     assert config.max_iterations == 100
+
+
+def test_load_openhands_config_env_override(monkeypatch, tmp_path):
+    """The OPENHANDS_CONFIG_FILE env var overrides the default config file path."""
+
+    env_config_file = tmp_path / 'env_config.toml'
+    env_config_file.write_text('[core]\nmax_iterations = 123\n')
+    monkeypatch.setenv('OPENHANDS_CONFIG_FILE', str(env_config_file))
+
+    config = load_openhands_config()
+    assert config.max_iterations == 123
+
+    explicit_config_file = tmp_path / 'explicit_config.toml'
+    explicit_config_file.write_text('[core]\nmax_iterations = 321\n')
+
+    config_with_explicit_path = load_openhands_config(
+        config_file=str(explicit_config_file)
+    )
+    assert config_with_explicit_path.max_iterations == 321
