@@ -4,6 +4,7 @@ from typing import Any, cast
 import httpx
 from pydantic import SecretStr
 
+from openhands.core.logger import openhands_logger as logger
 from openhands.integrations.protocols.http_client import HTTPClient
 from openhands.integrations.service_types import (
     BaseGitService,
@@ -27,6 +28,13 @@ class GitHubMixinBase(BaseGitService, HTTPClient):
             latest_token = await self.get_latest_token()
             if latest_token:
                 self.token = latest_token
+
+        logger.debug(
+            '[%s] Constructing GitHub headers token_available=%s base_url=%s',
+            self.provider,
+            bool(self.token),
+            self.BASE_URL,
+        )
 
         return {
             'Authorization': f'Bearer {self.token.get_secret_value() if self.token else ""}',
@@ -57,6 +65,11 @@ class GitHubMixinBase(BaseGitService, HTTPClient):
 
                 # Handle token refresh if needed
                 if self.refresh and self._has_token_expired(response.status_code):
+                    logger.debug(
+                        '[%s] GitHub token expired during request to %s - refreshing',
+                        self.provider,
+                        url,
+                    )
                     await self.get_latest_token()
                     github_headers = await self._get_headers()
                     response = await self.execute_request(
@@ -86,6 +99,18 @@ class GitHubMixinBase(BaseGitService, HTTPClient):
             async with httpx.AsyncClient() as client:
                 github_headers = await self._get_headers()
 
+                variables_preview = self._sanitize_for_logging(variables)
+                query_preview = ' '.join(query.split())
+                if len(query_preview) > 500:
+                    query_preview = f'{query_preview[:500]}... [truncated]'
+                logger.debug(
+                    '[%s] Executing GitHub GraphQL query url=%s variables=%s query_preview=%s',
+                    self.provider,
+                    self.GRAPHQL_URL,
+                    variables_preview,
+                    query_preview,
+                )
+
                 response = await client.post(
                     self.GRAPHQL_URL,
                     headers=github_headers,
@@ -99,6 +124,13 @@ class GitHubMixinBase(BaseGitService, HTTPClient):
                         f'GraphQL query error: {json.dumps(result["errors"])}'
                     )
 
+                logger.debug(
+                    '[%s] GitHub GraphQL query succeeded status=%s keys=%s',
+                    self.provider,
+                    response.status_code,
+                    list(result.keys()),
+                )
+
                 return dict(result)
 
         except httpx.HTTPStatusError as e:
@@ -108,12 +140,21 @@ class GitHubMixinBase(BaseGitService, HTTPClient):
 
     async def verify_access(self) -> bool:
         url = f'{self.BASE_URL}'
+        logger.debug('[%s] Verifying GitHub access via %s', self.provider, url)
         await self._make_request(url)
+        logger.debug('[%s] GitHub access verification succeeded', self.provider)
         return True
 
     async def get_user(self):
         url = f'{self.BASE_URL}/user'
+        logger.debug('[%s] Fetching GitHub user info from %s', self.provider, url)
         response, _ = await self._make_request(url)
+
+        logger.debug(
+            '[%s] GitHub user info retrieved keys=%s',
+            self.provider,
+            list(response.keys()),
+        )
 
         return User(
             id=str(response.get('id', '')),
