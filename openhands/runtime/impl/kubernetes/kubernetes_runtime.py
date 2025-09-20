@@ -93,6 +93,12 @@ class KubernetesRuntime(ActionExecutionClient):
         user_id: str | None = None,
         git_provider_tokens: PROVIDER_TOKEN_TYPE | None = None,
     ):
+        logger.debug(
+            'Initializing KubernetesRuntime for session %s (attach=%s, headless=%s)',
+            sid,
+            attach_to_existing,
+            headless_mode,
+        )
         if not KubernetesRuntime._shutdown_listener_id:
             KubernetesRuntime._shutdown_listener_id = add_shutdown_listener(
                 lambda: KubernetesRuntime._cleanup_k8s_resources(
@@ -124,12 +130,19 @@ class KubernetesRuntime(ActionExecutionClient):
             30083,
         ]  # Default app ports in valid range # The agent prefers these when exposing an application.
 
+        logger.debug(
+            'Resolved Kubernetes namespace to %s with PVC storage class %s',
+            self._k8s_namespace,
+            self._k8s_config.pvc_storage_class,
+        )
+
         self.k8s_client, self.k8s_networking_client = self._init_kubernetes_client()
 
         self.pod_image = self.config.sandbox.runtime_container_image
         if not self.pod_image:
             # If runtime_container_image isn't set, use the base_container_image as a fallback
             self.pod_image = self.config.sandbox.base_container_image
+        logger.debug('Using runtime container image %s', self.pod_image)
 
         self.pod_name = POD_NAME_PREFIX + sid
 
@@ -225,6 +238,7 @@ class KubernetesRuntime(ActionExecutionClient):
         self.log('info', f'Using API URL {self.api_url}')
 
         try:
+            self.log('debug', f'Attempting to attach to existing pod {self.pod_name}')
             await call_sync_from_async(self._attach_to_pod)
         except client.rest.ApiException as e:
             # we are not set to attach to existing, ignore error and init k8s resources.
@@ -235,6 +249,7 @@ class KubernetesRuntime(ActionExecutionClient):
                 )
                 raise AgentRuntimeDisconnectedError from e
 
+            self.log('debug', 'Attachment failed; creating fresh Kubernetes resources')
             self.log('info', f'Starting runtime with image: {self.pod_image}')
             try:
                 await call_sync_from_async(self._init_k8s_resources)
@@ -252,6 +267,7 @@ class KubernetesRuntime(ActionExecutionClient):
             self.log('info', 'Waiting for pod to become ready ...')
             self.set_runtime_status(RuntimeStatus.STARTING_RUNTIME)
         try:
+            self.log('debug', f'Waiting for runtime pod {self.pod_name} to become ready')
             await call_sync_from_async(self._wait_until_ready)
         except Exception as alive_error:
             self.log('error', f'Failed to connect to runtime: {alive_error}')
@@ -281,12 +297,17 @@ class KubernetesRuntime(ActionExecutionClient):
         """Attach to an existing pod."""
         try:
             self._wait_until_scheduled()
+            self.log('debug', f'Reading pod {self.pod_name} from namespace {self._k8s_namespace}')
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
             )
 
             if pod.status.phase != 'Running':
                 try:
+                    self.log(
+                        'debug',
+                        f'Pod {self.pod_name} currently {pod.status.phase}; waiting until ready',
+                    )
                     self._wait_until_ready()
                 except TimeoutError:
                     raise AgentRuntimeDisconnectedError(
@@ -313,14 +334,14 @@ class KubernetesRuntime(ActionExecutionClient):
     )
     def _wait_until_scheduled(self):
         """Wait until the pod is scheduled by Kubernetes."""
-        self.log('info', f'Checking if pod {self.pod_name} is scheduled in Kubernetes')
+        self.log('debug', f'Checking if pod {self.pod_name} is scheduled in Kubernetes')
         try:
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
             )
         except client.rest.ApiException as e:
             if e.status == 404:
-                self.log('info', f'Pod {self.pod_name} not found yet.')
+                self.log('debug', f'Pod {self.pod_name} not found yet.')
                 raise TimeoutError(
                     f'Pod {self.pod_name} has not been created in Kubernetes yet.'
                 ) from e
@@ -330,12 +351,12 @@ class KubernetesRuntime(ActionExecutionClient):
         if pod_status and pod_status.conditions:
             for condition in pod_status.conditions:
                 if condition.type == 'PodScheduled' and condition.status == 'True':
-                    self.log('info', f'Pod {self.pod_name} is scheduled!')
+                    self.log('debug', f'Pod {self.pod_name} is scheduled!')
                     return True
 
         phase = pod_status.phase if pod_status else 'Unknown'
         self.log(
-            'info',
+            'debug',
             f'Pod {self.pod_name} is not scheduled yet. Current phase: {phase}',
         )
         raise TimeoutError(f'Pod {self.pod_name} is not scheduled yet.')
@@ -348,18 +369,18 @@ class KubernetesRuntime(ActionExecutionClient):
     )
     def _wait_until_ready(self):
         """Wait until the runtime server is alive by checking the pod status in Kubernetes."""
-        self.log('info', f'Checking if pod {self.pod_name} is ready in Kubernetes')
+        self.log('debug', f'Checking if pod {self.pod_name} is ready in Kubernetes')
         pod = self.k8s_client.read_namespaced_pod(
             name=self.pod_name, namespace=self._k8s_namespace
         )
         if pod.status.phase == 'Running' and pod.status.conditions:
             for condition in pod.status.conditions:
                 if condition.type == 'Ready' and condition.status == 'True':
-                    self.log('info', f'Pod {self.pod_name} is ready!')
+                    self.log('debug', f'Pod {self.pod_name} is ready!')
                     return True  # Exit the function if the pod is ready
 
         self.log(
-            'info',
+            'debug',
             f'Pod {self.pod_name} is not ready yet. Current phase: {pod.status.phase}',
         )
         raise TimeoutError(f'Pod {self.pod_name} is not in Running state yet.')
@@ -370,6 +391,7 @@ class KubernetesRuntime(ActionExecutionClient):
         """Initialize the Kubernetes client."""
         try:
             config.load_incluster_config()  # Even local usage with mirrord technically uses an incluster config.
+            logger.debug('Initialized in-cluster Kubernetes client')
             return client.CoreV1Api(), client.NetworkingV1Api()
         except Exception as ex:
             logger.error(
@@ -386,6 +408,11 @@ class KubernetesRuntime(ActionExecutionClient):
         :param remove_pvc: If True, also remove persistent volume claims (defaults to False).
         """
         try:
+            logger.debug(
+                'Starting cleanup of Kubernetes resources for conversation %s (remove_pvc=%s)',
+                conversation_id,
+                remove_pvc,
+            )
             k8s_api, k8s_networking_api = KubernetesRuntime._init_kubernetes_client()
 
             pod_name = KubernetesRuntime._get_pod_name(conversation_id)
@@ -393,6 +420,15 @@ class KubernetesRuntime(ActionExecutionClient):
             vscode_service_name = KubernetesRuntime._get_vscode_svc_name(pod_name)
             ingress_name = KubernetesRuntime._get_vscode_ingress_name(pod_name)
             pvc_name = KubernetesRuntime._get_pvc_name(pod_name)
+
+            logger.debug(
+                'Computed Kubernetes resource names pod=%s service=%s vscode_service=%s ingress=%s pvc=%s',
+                pod_name,
+                service_name,
+                vscode_service_name,
+                ingress_name,
+                pvc_name,
+            )
 
             try:
                 if remove_pvc:
@@ -435,6 +471,7 @@ class KubernetesRuntime(ActionExecutionClient):
 
     def _get_pvc_manifest(self):
         """Create a PVC manifest for the runtime pod."""
+        self.log('debug', f'Building PVC manifest for pod {self.pod_name}')
         # Create PVC
         pvc = V1PersistentVolumeClaim(
             api_version='v1',
@@ -455,6 +492,7 @@ class KubernetesRuntime(ActionExecutionClient):
 
     def _get_vscode_service_manifest(self):
         """Create a service manifest for the VSCode server."""
+        self.log('debug', f'Building VSCode service manifest for pod {self.pod_name}')
         vscode_service_spec = V1ServiceSpec(
             selector={'app': POD_LABEL, 'session': self.sid},
             type='ClusterIP',
@@ -475,6 +513,7 @@ class KubernetesRuntime(ActionExecutionClient):
 
     def _get_runtime_service_manifest(self):
         """Create a service manifest for the runtime pod execution-server."""
+        self.log('debug', f'Building runtime service manifest for pod {self.pod_name}')
         service_spec = V1ServiceSpec(
             selector={'app': POD_LABEL, 'session': self.sid},
             type='ClusterIP',
@@ -495,6 +534,7 @@ class KubernetesRuntime(ActionExecutionClient):
 
     def _get_runtime_pod_manifest(self):
         """Create a pod manifest for the runtime sandbox."""
+        self.log('debug', f'Building pod manifest for pod {self.pod_name}')
         # Prepare environment variables
         environment = [
             V1EnvVar(name='port', value=str(self._container_port)),
@@ -504,10 +544,19 @@ class KubernetesRuntime(ActionExecutionClient):
 
         if self.config.debug or DEBUG:
             environment.append(V1EnvVar(name='DEBUG', value='true'))
+            self.log('debug', 'Debug mode enabled for runtime container')
 
         # Add runtime startup env vars
         for key, value in self.config.sandbox.runtime_startup_env_vars.items():
             environment.append(V1EnvVar(name=key, value=value))
+        if self.config.sandbox.runtime_startup_env_vars:
+            startup_keys = ', '.join(
+                self.config.sandbox.runtime_startup_env_vars.keys()
+            )
+            self.log(
+                'debug',
+                f'Added runtime startup environment variables: {startup_keys}',
+            )
 
         # Prepare volume mounts if workspace is configured
         volume_mounts = [
@@ -631,6 +680,7 @@ class KubernetesRuntime(ActionExecutionClient):
 
     def _get_vscode_ingress_manifest(self):
         """Create an ingress manifest for the VSCode server."""
+        self.log('debug', f'Building VSCode ingress manifest for pod {self.pod_name}')
         tls = []
         if self._k8s_config.ingress_tls_secret:
             runtime_tls = V1IngressTLS(
@@ -638,6 +688,10 @@ class KubernetesRuntime(ActionExecutionClient):
                 secret_name=self._k8s_config.ingress_tls_secret,
             )
             tls = [runtime_tls]
+            self.log(
+                'debug',
+                f'Ingress TLS enabled using secret {self._k8s_config.ingress_tls_secret}',
+            )
 
         rules = [
             V1IngressRule(
@@ -678,12 +732,16 @@ class KubernetesRuntime(ActionExecutionClient):
     def _pvc_exists(self):
         """Check if the PVC already exists."""
         try:
+            self.log('debug', f'Checking for existing PVC {self._get_pvc_name(self.pod_name)}')
             pvc = self.k8s_client.read_namespaced_persistent_volume_claim(
                 name=self._get_pvc_name(self.pod_name), namespace=self._k8s_namespace
             )
-            return pvc is not None
+            exists = pvc is not None
+            self.log('debug', f'PVC exists: {exists}')
+            return exists
         except client.rest.ApiException as e:
             if e.status == 404:
+                self.log('debug', 'PVC not found (404)')
                 return False
             self.log('error', f'Error checking PVC existence: {e}')
 
@@ -698,6 +756,10 @@ class KubernetesRuntime(ActionExecutionClient):
 
         deadline = monotonic() + timeout_seconds
         logged_waiting_message = False
+        self.log(
+            'debug',
+            f'Waiting up to {timeout_seconds}s for PVC {pvc_name} to bind with poll interval {poll_interval_seconds}s',
+        )
 
         while monotonic() < deadline:
             try:
@@ -733,6 +795,7 @@ class KubernetesRuntime(ActionExecutionClient):
         self.set_runtime_status(RuntimeStatus.STARTING_RUNTIME)
 
         self.log('info', f'Runtime will be accessible at {self.api_url}')
+        self.log('debug', 'Generating Kubernetes manifests for pod, services, PVC, and ingress')
 
         pod = self._get_runtime_pod_manifest()
         service = self._get_runtime_service_manifest()
@@ -740,6 +803,7 @@ class KubernetesRuntime(ActionExecutionClient):
         pvc_manifest = self._get_pvc_manifest()
         pvc_name = self._get_pvc_name(self.pod_name)
         ingress = self._get_vscode_ingress_manifest()
+        self.log('debug', f'Ensuring PVC {pvc_name} exists before pod creation')
 
         # Create the pod in Kubernetes
         try:
@@ -754,30 +818,41 @@ class KubernetesRuntime(ActionExecutionClient):
                 namespace=self._k8s_namespace, body=pod
             )
             self.log('info', f'Created pod {self.pod_name}.')
+            runtime_service_name = self._get_svc_name(self.pod_name)
+            self.log(
+                'debug',
+                f'Creating runtime service {runtime_service_name} in namespace {self._k8s_namespace}',
+            )
             # Create a service to expose the pod for external access
             self.k8s_client.create_namespaced_service(
                 namespace=self._k8s_namespace, body=service
             )
-            self.log('info', f'Created service {self._get_svc_name(self.pod_name)}')
+            self.log('info', f'Created service {runtime_service_name}')
 
             # Create second service service for the vscode server.
+            vscode_service_name = self._get_vscode_svc_name(self.pod_name)
+            self.log(
+                'debug',
+                f'Creating VSCode service {vscode_service_name} in namespace {self._k8s_namespace}',
+            )
             self.k8s_client.create_namespaced_service(
                 namespace=self._k8s_namespace, body=vscode_service
             )
-            self.log(
-                'info', f'Created service {self._get_vscode_svc_name(self.pod_name)}'
-            )
+            self.log('info', f'Created service {vscode_service_name}')
 
             # create the vscode ingress.
+            vscode_ingress_name = self._get_vscode_ingress_name(self.pod_name)
+            self.log(
+                'debug',
+                f'Creating VSCode ingress {vscode_ingress_name} in namespace {self._k8s_namespace}',
+            )
             self.k8s_networking_client.create_namespaced_ingress(
                 namespace=self._k8s_namespace, body=ingress
             )
-            self.log(
-                'info',
-                f'Created ingress {self._get_vscode_ingress_name(self.pod_name)}',
-            )
+            self.log('info', f'Created ingress {vscode_ingress_name}')
 
             # Wait for the pod to be running
+            self.log('debug', f'Waiting for pod {self.pod_name} to report Ready condition')
             self._wait_until_ready()
 
         except client.rest.ApiException as e:
@@ -805,9 +880,16 @@ class KubernetesRuntime(ActionExecutionClient):
             self.log(
                 'info', 'Keeping runtime alive due to configuration or attach mode'
             )
+            self.log(
+                'debug',
+                'Skip cleanup because keep_runtime_alive='
+                f'{self.config.sandbox.keep_runtime_alive} '
+                f'attach_to_existing={self.attach_to_existing}',
+            )
             return
 
         try:
+            self.log('debug', 'Initiating cleanup of Kubernetes resources for session close')
             self._cleanup_k8s_resources(
                 namespace=self._k8s_namespace,
                 remove_pvc=False,
@@ -819,7 +901,9 @@ class KubernetesRuntime(ActionExecutionClient):
     @property
     def ingress_domain(self) -> str:
         """Get the ingress domain for the runtime."""
-        return f'{self.sid}.{self._k8s_config.ingress_domain}'
+        domain = f'{self.sid}.{self._k8s_config.ingress_domain}'
+        self.log('debug', f'Computed ingress domain {domain}')
+        return domain
 
     @property
     def vscode_url(self) -> str | None:
@@ -841,6 +925,7 @@ class KubernetesRuntime(ActionExecutionClient):
         hosts = {}
         for idx, port in enumerate(self._app_ports):
             hosts[f'{self.k8s_local_url}:{port}'] = port
+        self.log('debug', f'Computed web host port mappings: {hosts}')
         return hosts
 
     @classmethod
