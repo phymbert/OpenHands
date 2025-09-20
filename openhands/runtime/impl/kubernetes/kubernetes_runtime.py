@@ -296,7 +296,6 @@ class KubernetesRuntime(ActionExecutionClient):
     def _attach_to_pod(self):
         """Attach to an existing pod."""
         try:
-            self._wait_until_scheduled()
             self.log('debug', f'Reading pod {self.pod_name} from namespace {self._k8s_namespace}')
             pod = self.k8s_client.read_namespaced_pod(
                 name=self.pod_name, namespace=self._k8s_namespace
@@ -818,6 +817,11 @@ class KubernetesRuntime(ActionExecutionClient):
                 namespace=self._k8s_namespace, body=pod
             )
             self.log('info', f'Created pod {self.pod_name}.')
+            self.log(
+                'debug',
+                f'Waiting for pod {self.pod_name} to be scheduled before proceeding with service creation',
+            )
+            self._wait_until_scheduled()
             runtime_service_name = self._get_svc_name(self.pod_name)
             self.log(
                 'debug',
