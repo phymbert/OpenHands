@@ -11,6 +11,7 @@ from openhands.integrations.service_types import (
     UnknownException,
     User,
 )
+from openhands.utils.http_session import httpx_verify_option
 
 
 class GitLabMixinBase(BaseGitService, HTTPClient):
@@ -49,7 +50,7 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
         method: RequestMethod = RequestMethod.GET,
     ) -> tuple[Any, dict]:  # type: ignore[override]
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
                 gitlab_headers = await self._get_headers()
 
                 # Make initial request
@@ -112,7 +113,7 @@ class GitLabMixinBase(BaseGitService, HTTPClient):
         if variables is None:
             variables = {}
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
                 gitlab_headers = await self._get_headers()
                 # Add content type header for GraphQL
                 gitlab_headers['Content-Type'] = 'application/json'
