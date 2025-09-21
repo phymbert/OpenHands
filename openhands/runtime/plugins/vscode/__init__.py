@@ -12,6 +12,7 @@ from openhands.core.logger import openhands_logger as logger
 from openhands.events.action import Action
 from openhands.events.observation import Observation
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
+from openhands.runtime.utils.runtime_paths import runtime_path
 from openhands.runtime.utils.system import check_port_available
 from openhands.utils.shutdown_listener import should_continue
 
@@ -90,9 +91,10 @@ class VSCodePlugin(Plugin):
             in {'false', '0', 'no', 'off'}
         )
         writable_home_override = os.environ.get('RUNTIME_WRITABLE_HOME')
+        openvscode_root = runtime_path('.openvscode-server')
         shell_prefix = f"su - {username} -s /bin/bash << 'EOF'\n"
         ownership_cmd = (
-            f'sudo chown -R {username}:{username} /openhands/.openvscode-server\n'
+            f'sudo chown -R {username}:{username} {openvscode_root}\n'
         )
         env_setup = ''
         if writable_home_override:
@@ -103,15 +105,18 @@ class VSCodePlugin(Plugin):
             )
             shell_prefix = "/bin/bash << 'EOF'\n"
             ownership_cmd = (
-                f'chown -R {username}:{username} /openhands/.openvscode-server\n'
+                f'chown -R {username}:{username} {openvscode_root}\n'
             )
 
+        openvscode_binary = runtime_path(
+            '.openvscode-server', 'bin', 'openvscode-server'
+        )
         cmd = (
             f"{shell_prefix}"
             f'{env_setup}'
             f'{ownership_cmd}'
             f'cd {workspace_path}\n'
-            f'exec /openhands/.openvscode-server/bin/openvscode-server --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
+            f'exec {openvscode_binary} --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
             'EOF'
         )
 

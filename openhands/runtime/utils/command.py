@@ -1,28 +1,33 @@
 from openhands.core.config import OpenHandsConfig
 from openhands.core.logger import openhands_logger as logger
 from openhands.runtime.plugins import PluginRequirement
-
-DEFAULT_PYTHON_PREFIX = [
-    '/openhands/micromamba/bin/micromamba',
-    'run',
-    '-n',
-    'openhands',
-    'poetry',
-    'run',
-]
+from openhands.runtime.utils.runtime_paths import runtime_path
 DEFAULT_MAIN_MODULE = 'openhands.runtime.action_execution_server'
+
+
+def _default_python_prefix() -> list[str]:
+    return [
+        runtime_path('micromamba', 'bin', 'micromamba'),
+        'run',
+        '-n',
+        'openhands',
+        'poetry',
+        'run',
+    ]
 
 
 def get_action_execution_server_startup_command(
     server_port: int,
     plugins: list[PluginRequirement],
     app_config: OpenHandsConfig,
-    python_prefix: list[str] = DEFAULT_PYTHON_PREFIX,
+    python_prefix: list[str] | None = None,
     override_user_id: int | None = None,
     override_username: str | None = None,
     main_module: str = DEFAULT_MAIN_MODULE,
     python_executable: str = 'python',
 ) -> list[str]:
+    if python_prefix is None:
+        python_prefix = _default_python_prefix()
     sandbox_config = app_config.sandbox
     logger.debug(f'app_config {vars(app_config)}')
     logger.debug(f'sandbox_config {vars(sandbox_config)}')

@@ -5,11 +5,20 @@ from typing import Callable
 
 from openhands.core.logger import openhands_logger as logger
 from openhands.runtime.utils import git_changes, git_diff
+from openhands.runtime.utils.runtime_paths import runtime_path
 
-GIT_CHANGES_CMD = 'python3 /openhands/code/openhands/runtime/utils/git_changes.py'
-GIT_DIFF_CMD = (
-    'python3 /openhands/code/openhands/runtime/utils/git_diff.py "{file_path}"'
-)
+
+def _default_git_changes_cmd() -> str:
+    return f'python3 {runtime_path("code", "openhands", "runtime", "utils", "git_changes.py")}'
+
+
+def _default_git_diff_cmd() -> str:
+    script_path = runtime_path('code', 'openhands', 'runtime', 'utils', 'git_diff.py')
+    return f'python3 {script_path} "{{file_path}}"'
+
+
+GIT_CHANGES_CMD = _default_git_changes_cmd()
+GIT_DIFF_CMD = _default_git_diff_cmd()
 GIT_BRANCH_CMD = 'git branch --show-current'
 
 
@@ -39,6 +48,8 @@ class GitHandler:
         self.cwd: str | None = None
         self.git_changes_cmd = GIT_CHANGES_CMD
         self.git_diff_cmd = GIT_DIFF_CMD
+        self._default_git_changes_cmd = self.git_changes_cmd
+        self._default_git_diff_cmd = self.git_diff_cmd
         self.git_branch_cmd = GIT_BRANCH_CMD
 
     def set_cwd(self, cwd: str) -> None:
@@ -104,7 +115,7 @@ class GitHandler:
                 )
                 return None
 
-        if self.git_changes_cmd != GIT_CHANGES_CMD:
+        if self.git_changes_cmd != self._default_git_changes_cmd:
             # We have already tried to add a script to the workspace - it did not work
             return None
 
@@ -136,7 +147,7 @@ class GitHandler:
             diff = json.loads(result.content, strict=False)
             return diff
 
-        if self.git_diff_cmd != GIT_DIFF_CMD:
+        if self.git_diff_cmd != self._default_git_diff_cmd:
             # We have already tried to add a script to the workspace - it did not work
             raise ValueError('error_in_git_diff')
 

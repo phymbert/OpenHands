@@ -11,6 +11,7 @@ from openhands.events.observation import IPythonRunCellObservation
 from openhands.runtime.plugins.jupyter.execute_server import JupyterKernel
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
 from openhands.runtime.utils import find_available_tcp_port
+from openhands.runtime.utils.runtime_paths import runtime_path
 from openhands.utils.shutdown_listener import should_continue
 
 
@@ -52,15 +53,15 @@ class JupyterPlugin(Plugin):
                 prefix = f'su - {username} -s '
             # cd to code repo, setup all env vars and run micromamba
             env_lines = [
-                'cd /openhands/code',
-                'export POETRY_VIRTUALENVS_PATH=/openhands/poetry;',
-                'export PYTHONPATH=/openhands/code:$PYTHONPATH;',
-                'export MAMBA_ROOT_PREFIX=/openhands/micromamba;',
+                f'cd {runtime_path("code")}',
+                f'export POETRY_VIRTUALENVS_PATH={runtime_path("poetry")};',
+                f'export PYTHONPATH={runtime_path("code")}:$PYTHONPATH;',
+                f'export MAMBA_ROOT_PREFIX={runtime_path("micromamba")};',
             ]
             if writable_home_override:
                 env_lines.append(f'export HOME={writable_home_override}')
             poetry_prefix = '\n'.join(env_lines) + '\n'
-            poetry_prefix += '/openhands/micromamba/bin/micromamba run -n openhands '
+            poetry_prefix += f'{runtime_path("micromamba", "bin", "micromamba")} run -n openhands '
         else:
             # LocalRuntime
             prefix = ''
