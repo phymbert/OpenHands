@@ -1,7 +1,7 @@
 from openhands.core.config import OpenHandsConfig
 from openhands.core.logger import openhands_logger as logger
 from openhands.runtime.plugins import PluginRequirement
-from openhands.runtime.utils.runtime_paths import runtime_path
+from openhands.runtime.utils import runtime_path
 DEFAULT_MAIN_MODULE = 'openhands.runtime.action_execution_server'
 
 

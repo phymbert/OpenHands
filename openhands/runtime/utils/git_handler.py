@@ -5,7 +5,7 @@ from typing import Callable
 
 from openhands.core.logger import openhands_logger as logger
 from openhands.runtime.utils import git_changes, git_diff
-from openhands.runtime.utils.runtime_paths import runtime_path
+from openhands.runtime.utils import runtime_path
 
 
 def _default_git_changes_cmd() -> str:

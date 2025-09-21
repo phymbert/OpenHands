@@ -10,8 +10,7 @@ from openhands.events.action import Action, IPythonRunCellAction
 from openhands.events.observation import IPythonRunCellObservation
 from openhands.runtime.plugins.jupyter.execute_server import JupyterKernel
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
-from openhands.runtime.utils import find_available_tcp_port
-from openhands.runtime.utils.runtime_paths import runtime_path
+from openhands.runtime.utils import find_available_tcp_port, runtime_path
 from openhands.utils.shutdown_listener import should_continue
 
 
