@@ -152,29 +152,8 @@ Kubernetes-specific settings live under the `[kubernetes]` section of `config.to
 environment variable by converting the key to uppercase and prefixing it with `KUBERNETES_`. For example, setting
 `namespace = "openhands"` is equivalent to exporting `KUBERNETES_NAMESPACE=openhands`.
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `namespace` | `str` | `"default"` | Namespace that receives the pod, services, ingress, and persistent volume claim. |
-| `ingress_domain` | `str` | `"localhost"` | Base domain appended to the session ID when generating VS Code ingress hostnames. |
-| `pvc_storage_size` | `str` | `"2Gi"` | Requested capacity for the session PVC. |
-| `pvc_storage_class` | `str \| null` | `null` | Storage class name supplied when creating the PVC. |
-| `resource_cpu_request` | `str` | `"1"` | CPU request applied to the runtime container. |
-| `resource_memory_request` | `str` | `"1Gi"` | Memory request applied to the runtime container. |
-| `resource_memory_limit` | `str` | `"2Gi"` | Memory limit enforced on the runtime container. |
-| `image_pull_secret` | `str \| null` | `null` | Name of an image pull secret used to pull private runtime images. |
-| `ingress_tls_secret` | `str \| null` | `null` | TLS secret attached to the VS Code ingress for HTTPS. |
-| `node_selector_key` | `str \| null` | `null` | Node selector key applied to the pod. |
-| `node_selector_val` | `str \| null` | `null` | Node selector value paired with `node_selector_key`. |
-| `tolerations_yaml` | `str \| null` | `null` | YAML string defining extra tolerations merged into the pod spec. |
-| `privileged` | `bool` | `false` | Run the runtime container in privileged mode (required for Docker-in-Docker). |
-| `allow_privilege_escalation` | `bool \| null` | `null` | Allow processes inside the container to escalate privileges. |
-| `read_only_root_filesystem` | `bool \| null` | `null` | Mount the container root filesystem as read-only. |
-| `run_as_non_root` | `bool \| null` | `null` | Require Kubernetes to run the container as a non-root user. |
-| `run_as_user` | `int \| null` | `null` | Override the user ID used inside the container. |
-| `run_as_group` | `int \| null` | `null` | Override the primary group ID used inside the container. |
-| `mount_tmp_empty_dir` | `bool` | `false` | Mount `/tmp` as an ephemeral `emptyDir` volume inside the pod. |
-| `enable_memory_dshm_volume` | `bool` | `false` | Mount `/dev/shm` as an in-memory `emptyDir` volume. |
-| `memory_dshm_volume_size_limit` | `str \| null` | `null` | Optional size limit applied to the `/dev/shm` `emptyDir`. |
+Refer to the [Kubernetes Runtime guide](./runtimes/kubernetes#kubernetes-configuration-reference) for the complete list of
+available options and their descriptions.
 
 ## LLM Configuration
 
