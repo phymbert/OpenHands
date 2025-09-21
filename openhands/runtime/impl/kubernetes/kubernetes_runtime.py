@@ -731,6 +731,14 @@ class KubernetesRuntime(ActionExecutionClient):
                 )
             )
 
+        if self._k8s_config.read_only_root_filesystem is not None:
+            environment.append(
+                V1EnvVar(
+                    name='KUBERNETES_READ_ONLY_ROOT_FILESYSTEM',
+                    value=str(self._k8s_config.read_only_root_filesystem).lower(),
+                )
+            )
+
         # Add runtime startup env vars
         for key, value in self.config.sandbox.runtime_startup_env_vars.items():
             environment.append(V1EnvVar(name=key, value=value))

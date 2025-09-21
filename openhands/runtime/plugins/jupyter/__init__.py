@@ -39,6 +39,7 @@ class JupyterPlugin(Plugin):
             .lower()
             in {'false', '0', 'no', 'off'}
         )
+        writable_home_override = os.environ.get('RUNTIME_WRITABLE_HOME')
 
         prefix = ''
         if not is_local_runtime:
@@ -50,13 +51,16 @@ class JupyterPlugin(Plugin):
                 # Non-LocalRuntime
                 prefix = f'su - {username} -s '
             # cd to code repo, setup all env vars and run micromamba
-            poetry_prefix = (
-                'cd /openhands/code\n'
-                'export POETRY_VIRTUALENVS_PATH=/openhands/poetry;\n'
-                'export PYTHONPATH=/openhands/code:$PYTHONPATH;\n'
-                'export MAMBA_ROOT_PREFIX=/openhands/micromamba;\n'
-                '/openhands/micromamba/bin/micromamba run -n openhands '
-            )
+            env_lines = [
+                'cd /openhands/code',
+                'export POETRY_VIRTUALENVS_PATH=/openhands/poetry;',
+                'export PYTHONPATH=/openhands/code:$PYTHONPATH;',
+                'export MAMBA_ROOT_PREFIX=/openhands/micromamba;',
+            ]
+            if writable_home_override:
+                env_lines.append(f'export HOME={writable_home_override}')
+            poetry_prefix = '\n'.join(env_lines) + '\n'
+            poetry_prefix += '/openhands/micromamba/bin/micromamba run -n openhands '
         else:
             # LocalRuntime
             prefix = ''

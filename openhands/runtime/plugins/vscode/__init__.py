@@ -89,10 +89,14 @@ class VSCodePlugin(Plugin):
             .lower()
             in {'false', '0', 'no', 'off'}
         )
+        writable_home_override = os.environ.get('RUNTIME_WRITABLE_HOME')
         shell_prefix = f"su - {username} -s /bin/bash << 'EOF'\n"
         ownership_cmd = (
             f'sudo chown -R {username}:{username} /openhands/.openvscode-server\n'
         )
+        env_setup = ''
+        if writable_home_override:
+            env_setup = f'export HOME={writable_home_override}\n'
         if allow_privilege_escalation_disabled:
             logger.debug(
                 'Kubernetes allow_privilege_escalation=false detected; skipping `su` for VSCode plugin.'
@@ -104,6 +108,7 @@ class VSCodePlugin(Plugin):
 
         cmd = (
             f"{shell_prefix}"
+            f'{env_setup}'
             f'{ownership_cmd}'
             f'cd {workspace_path}\n'
             f'exec /openhands/.openvscode-server/bin/openvscode-server --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
