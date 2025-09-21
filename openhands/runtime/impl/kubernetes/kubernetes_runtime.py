@@ -354,20 +354,28 @@ class KubernetesRuntime(ActionExecutionClient):
             f'{resource_type} {resource_name} encountered an unrecoverable error: {details}'
         )
         self.log('error', message)
-        self.log('info', 'Attempting to clean up Kubernetes resources after failure')
         self.set_runtime_status(RuntimeStatus.ERROR_RUNTIME_DISCONNECTED, message)
-        try:
-            self._cleanup_k8s_resources(
-                namespace=self._k8s_namespace,
-                remove_pvc=False,
-                conversation_id=self.sid,
-            )
-        except Exception as cleanup_error:  # pragma: no cover - best effort cleanup
+
+        if self.config.sandbox.keep_runtime_alive:
             self.log(
-                'error',
-                'Encountered error while cleaning up Kubernetes resources after '
-                f'{resource_type} failure: {cleanup_error}',
+                'info',
+                'Skipping cleanup because keep_runtime_alive is enabled after '
+                f'{resource_type} failure',
             )
+        else:
+            self.log('info', 'Attempting to clean up Kubernetes resources after failure')
+            try:
+                self._cleanup_k8s_resources(
+                    namespace=self._k8s_namespace,
+                    remove_pvc=False,
+                    conversation_id=self.sid,
+                )
+            except Exception as cleanup_error:  # pragma: no cover - best effort cleanup
+                self.log(
+                    'error',
+                    'Encountered error while cleaning up Kubernetes resources after '
+                    f'{resource_type} failure: {cleanup_error}',
+                )
         raise AgentRuntimeDisconnectedError(message)
 
     def _check_pod_for_errors(self, pod: V1Pod) -> None:
@@ -780,6 +788,14 @@ class KubernetesRuntime(ActionExecutionClient):
                 )
             )
 
+        if self._k8s_config.read_only_root_filesystem:
+            if not any(env.name == 'LOG_TO_FILE' for env in environment):
+                environment.append(V1EnvVar(name='LOG_TO_FILE', value='false'))
+            if self._k8s_config.mount_tmp_empty_dir and not any(
+                env.name == 'HOME' for env in environment
+            ):
+                environment.append(V1EnvVar(name='HOME', value='/tmp'))
+
         # Prepare container ports
         container_ports = [
             V1ContainerPort(container_port=self._container_port, name='http'),
@@ -807,12 +823,18 @@ class KubernetesRuntime(ActionExecutionClient):
         )
         # Prepare command
         # Entry point command for generated sandbox runtime pod.
+        override_user_id: int | None = 0
+        override_username: str | None = 'root'
+        if self._k8s_config.run_as_non_root is False:
+            override_user_id = None
+            override_username = None
+
         command = get_action_execution_server_startup_command(
             server_port=self._container_port,
             plugins=self.plugins,
             app_config=self.config,
-            override_user_id=0,  # if we use the default of app_config.run_as_openhands then we cant edit files in vscode due to file perms.
-            override_username='root',
+            override_user_id=override_user_id,
+            override_username=override_username,
         )
 
         # Prepare resource requirements based on config
