@@ -723,6 +723,14 @@ class KubernetesRuntime(ActionExecutionClient):
             environment.append(V1EnvVar(name='DEBUG', value='true'))
             self.log('debug', 'Debug mode enabled for runtime container')
 
+        if self._k8s_config.allow_privilege_escalation is not None:
+            environment.append(
+                V1EnvVar(
+                    name='KUBERNETES_ALLOW_PRIVILEGE_ESCALATION',
+                    value=str(self._k8s_config.allow_privilege_escalation).lower(),
+                )
+            )
+
         # Add runtime startup env vars
         for key, value in self.config.sandbox.runtime_startup_env_vars.items():
             environment.append(V1EnvVar(name=key, value=value))

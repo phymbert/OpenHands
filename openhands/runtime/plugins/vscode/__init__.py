@@ -83,9 +83,28 @@ class VSCodePlugin(Plugin):
                 if path_mode:
                     base_path_flag = f' --server-base-path /{runtime_id}/vscode'
 
-        cmd = (
-            f"su - {username} -s /bin/bash << 'EOF'\n"
+        allow_privilege_escalation_disabled = (
+            os.environ.get('KUBERNETES_ALLOW_PRIVILEGE_ESCALATION', '')
+            .strip()
+            .lower()
+            in {'false', '0', 'no', 'off'}
+        )
+        shell_prefix = f"su - {username} -s /bin/bash << 'EOF'\n"
+        ownership_cmd = (
             f'sudo chown -R {username}:{username} /openhands/.openvscode-server\n'
+        )
+        if allow_privilege_escalation_disabled:
+            logger.debug(
+                'Kubernetes allow_privilege_escalation=false detected; skipping `su` for VSCode plugin.'
+            )
+            shell_prefix = "/bin/bash << 'EOF'\n"
+            ownership_cmd = (
+                f'chown -R {username}:{username} /openhands/.openvscode-server\n'
+            )
+
+        cmd = (
+            f"{shell_prefix}"
+            f'{ownership_cmd}'
             f'cd {workspace_path}\n'
             f'exec /openhands/.openvscode-server/bin/openvscode-server --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
             'EOF'

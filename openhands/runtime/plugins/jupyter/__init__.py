@@ -33,10 +33,22 @@ class JupyterPlugin(Plugin):
         self.kernel_id = kernel_id
         is_local_runtime = os.environ.get('LOCAL_RUNTIME_MODE') == '1'
         is_windows = sys.platform == 'win32'
+        allow_privilege_escalation_disabled = (
+            os.environ.get('KUBERNETES_ALLOW_PRIVILEGE_ESCALATION', '')
+            .strip()
+            .lower()
+            in {'false', '0', 'no', 'off'}
+        )
 
+        prefix = ''
         if not is_local_runtime:
-            # Non-LocalRuntime
-            prefix = f'su - {username} -s '
+            if allow_privilege_escalation_disabled:
+                logger.debug(
+                    'Kubernetes allow_privilege_escalation=false detected; skipping `su` for Jupyter plugin.'
+                )
+            else:
+                # Non-LocalRuntime
+                prefix = f'su - {username} -s '
             # cd to code repo, setup all env vars and run micromamba
             poetry_prefix = (
                 'cd /openhands/code\n'
