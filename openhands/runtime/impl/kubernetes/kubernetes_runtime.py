@@ -1,3 +1,4 @@
+import shlex
 from functools import lru_cache
 from time import monotonic, sleep
 from typing import Any, Callable
@@ -791,10 +792,6 @@ class KubernetesRuntime(ActionExecutionClient):
         if self._k8s_config.read_only_root_filesystem:
             if not any(env.name == 'LOG_TO_FILE' for env in environment):
                 environment.append(V1EnvVar(name='LOG_TO_FILE', value='false'))
-            if self._k8s_config.mount_tmp_empty_dir and not any(
-                env.name == 'HOME' for env in environment
-            ):
-                environment.append(V1EnvVar(name='HOME', value='/tmp'))
 
         # Prepare container ports
         container_ports = [
@@ -836,6 +833,32 @@ class KubernetesRuntime(ActionExecutionClient):
             override_user_id=override_user_id,
             override_username=override_username,
         )
+
+        if self._k8s_config.read_only_root_filesystem:
+            runtime_command_str = shlex.join(command)
+            self.log(
+                'debug',
+                'Wrapping runtime command to ensure writable home directory on read-only root filesystem',
+            )
+            home_relocation_script = '\n'.join(
+                [
+                    'set -e',
+                    'ORIGINAL_HOME="/home/openhands"',
+                    'if [ -d "$ORIGINAL_HOME" ]; then',
+                    '    CHECK_FILE="$ORIGINAL_HOME/.openhands-write-check"',
+                    '    if touch "$CHECK_FILE" 2>/dev/null; then',
+                    '        rm -f "$CHECK_FILE"',
+                    '    else',
+                    '        NEW_HOME="/tmp/home/openhands"',
+                    '        mkdir -p "$NEW_HOME"',
+                    '        cp -a "$ORIGINAL_HOME"/. "$NEW_HOME"/',
+                    '        export HOME="$NEW_HOME"',
+                    '    fi',
+                    'fi',
+                    f'exec {runtime_command_str}',
+                ]
+            )
+            command = ['/bin/sh', '-c', home_relocation_script]
 
         # Prepare resource requirements based on config
         resources = V1ResourceRequirements(
