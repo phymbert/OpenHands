@@ -49,9 +49,6 @@
 # Enable the browser environment
 #enable_browser = true
 
-# Skip TLS certificate verification for outbound HTTP requests (NOT recommended)
-#insecure_skip_verify = false
-
 # Maximum budget per task, 0.0 means no limit
 #max_budget_per_task = 0.0
 
@@ -492,20 +489,46 @@ type = "noop"
 # Run the runtime sandbox container in privileged mode for use with docker-in-docker
 #privileged = false
 
-# Allow processes in the runtime sandbox container to escalate privileges
-#allow_privilege_escalation = false
+#################################### MCP #####################################
+# Configuration for Model Context Protocol (MCP) servers
+# MCP allows OpenHands to communicate with external tool servers
+##############################################################################
+[mcp]
+# SSE servers - Server-Sent Events transport (legacy)
+#sse_servers = [
+#    # Basic SSE server with just a URL
+#    "http://localhost:8080/mcp/sse",
+#
+#    # SSE server with authentication
+#    {url = "https://api.example.com/mcp/sse", api_key = "your-api-key"}
+#]
 
-# Mount the runtime sandbox container root filesystem as read-only
-#read_only_root_filesystem = false
+# SHTTP servers - Streamable HTTP transport (recommended)
+#shttp_servers = [
+#    # Basic SHTTP server with default 60s timeout
+#    "https://api.example.com/mcp/shttp",
+#
+#    # SHTTP server with custom timeout for long-running tools
+#    {
+#        url = "https://api.example.com/mcp/shttp",
+#        api_key = "your-api-key",
+#        timeout = 180  # 3 minutes for processing-heavy tools (1-3600 seconds)
+#    }
+#]
 
-# Require the runtime sandbox container to run as a non-root user
-#run_as_non_root = true
-
-# Override the user ID used for the runtime sandbox container
-#run_as_user = 1000
-
-# Override the primary group ID used for the runtime sandbox container
-#run_as_group = 1000
+# Stdio servers - Direct process communication (development only)
+#stdio_servers = [
+#    # Basic stdio server
+#    {name = "filesystem", command = "npx", args = ["@modelcontextprotocol/server-filesystem", "/"]},
+#
+#    # Stdio server with environment variables
+#    {
+#        name = "fetch",
+#        command = "uvx",
+#        args = ["mcp-server-fetch"],
+#        env = {DEBUG = "true"}
+#    }
+#]
 
 #################################### Model Routing ############################
 # Configuration for experimental model routing feature
