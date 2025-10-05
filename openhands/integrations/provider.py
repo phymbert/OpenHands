@@ -40,6 +40,8 @@ from openhands.utils.http_session import httpx_verify_option
 
 BitbucketMode = Literal['cloud', 'server']
 
+BitbucketMode = Literal['cloud', 'server']
+
 
 class ProviderToken(BaseModel):
     token: SecretStr | None = Field(default=None)
