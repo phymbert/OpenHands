@@ -135,7 +135,7 @@ class BitbucketIssueHandler(IssueHandlerInterface):
                 base_branch=data.get('toRef', {}).get('displayId'),
             )
 
-        url = f'{self._get_repo_api_base()}/issues/{issue_number}'
+        url = f'{self.base_url}/repositories/{self.owner}/{self.repo}/issues/{issue_number}'
         async with httpx.AsyncClient(verify=httpx_verify_option()) as client:
             response = await client.get(url, headers=self.headers)
             response.raise_for_status()
