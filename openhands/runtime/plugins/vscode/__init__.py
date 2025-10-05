@@ -12,18 +12,9 @@ from openhands.core.logger import openhands_logger as logger
 from openhands.events.action import Action
 from openhands.events.observation import Observation
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
+from openhands.runtime.utils import runtime_path
 from openhands.runtime.utils.system import check_port_available
 from openhands.utils.shutdown_listener import should_continue
-
-RUNTIME_USERNAME = os.getenv('RUNTIME_USERNAME')
-SU_TO_USER = os.getenv('SU_TO_USER', 'true').lower() in (
-    '1',
-    'true',
-    't',
-    'yes',
-    'y',
-    'on',
-)
 
 
 @dataclass
@@ -47,7 +38,7 @@ class VSCodePlugin(Plugin):
             )
             return
 
-        if username not in filter(None, [RUNTIME_USERNAME, 'root', 'openhands']):
+        if username not in ['root', 'openhands']:
             self.vscode_port = None
             self.vscode_connection_token = None
             logger.warning(
@@ -93,19 +84,41 @@ class VSCodePlugin(Plugin):
                 if path_mode:
                     base_path_flag = f' --server-base-path /{runtime_id}/vscode'
 
-            cmd = (
-                (
-                    f"su - {username} -s /bin/bash << 'EOF'\n"
-                    if SU_TO_USER
-                    else "/bin/bash << 'EOF'\n"
-                )
-                + f'sudo chown -R {username}:{username} /openhands/.openvscode-server\n'
-                + f'cd {workspace_path}\n'
-                + 'exec /openhands/.openvscode-server/bin/openvscode-server '
-                + f'--host 0.0.0.0 --connection-token {self.vscode_connection_token} '
-                + f'--port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
-                + 'EOF'
+        allow_privilege_escalation_disabled = (
+            os.environ.get('KUBERNETES_ALLOW_PRIVILEGE_ESCALATION', '')
+            .strip()
+            .lower()
+            in {'false', '0', 'no', 'off'}
+        )
+        writable_home_override = os.environ.get('RUNTIME_WRITABLE_HOME')
+        openvscode_root = runtime_path('.openvscode-server')
+        shell_prefix = f"su - {username} -s /bin/bash << 'EOF'\n"
+        ownership_cmd = (
+            f'sudo chown -R {username}:{username} {openvscode_root}\n'
+        )
+        env_setup = ''
+        if writable_home_override:
+            env_setup = f'export HOME={writable_home_override}\n'
+        if allow_privilege_escalation_disabled:
+            logger.debug(
+                'Kubernetes allow_privilege_escalation=false detected; skipping `su` for VSCode plugin.'
             )
+            shell_prefix = "/bin/bash << 'EOF'\n"
+            ownership_cmd = (
+                f'chown -R {username}:{username} {openvscode_root}\n'
+            )
+
+        openvscode_binary = runtime_path(
+            '.openvscode-server', 'bin', 'openvscode-server'
+        )
+        cmd = (
+            f"{shell_prefix}"
+            f'{env_setup}'
+            f'{ownership_cmd}'
+            f'cd {workspace_path}\n'
+            f'exec {openvscode_binary} --host 0.0.0.0 --connection-token {self.vscode_connection_token} --port {self.vscode_port} --disable-workspace-trust{base_path_flag}\n'
+            'EOF'
+        )
 
         # Using asyncio.create_subprocess_shell instead of subprocess.Popen
         # to avoid ASYNC101 linting error

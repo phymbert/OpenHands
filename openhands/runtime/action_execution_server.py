@@ -90,6 +90,106 @@ ROOT_GID = 0
 SESSION_API_KEY = os.environ.get('SESSION_API_KEY')
 api_key_header = APIKeyHeader(name='X-Session-API-Key', auto_error=False)
 
+_TRUTHY = {'true', '1', 'yes', 'on'}
+
+
+def _prepare_writable_runtime_root() -> None:
+    flag = os.environ.get('KUBERNETES_READ_ONLY_ROOT_FILESYSTEM', '')
+    if flag.strip().lower() not in _TRUTHY:
+        return
+
+    source_root = Path('/openhands')
+    target_root = Path('/tmp/openhands-root')
+
+    if not source_root.exists():
+        logger.warning(
+            'Expected runtime root %s is missing; skipping relocation.', source_root
+        )
+        return
+
+    try:
+        if target_root.exists():
+            shutil.rmtree(target_root)
+
+        shutil.copytree(source_root, target_root, symlinks=True)
+
+        os.environ['OPENHANDS_RUNTIME_ROOT'] = str(target_root)
+
+        # Rewrite environment variables that still point to the read-only root
+        target_root_str = str(target_root)
+        for key, value in list(os.environ.items()):
+            if not isinstance(value, str):
+                continue
+            if value == target_root_str:
+                continue
+            if '/openhands' in value:
+                os.environ[key] = value.replace('/openhands', target_root_str)
+
+        # Ensure the relocated bin directory is at the front of PATH
+        bin_path = target_root / 'bin'
+        if bin_path.exists():
+            current_path = os.environ.get('PATH', '')
+            os.environ['PATH'] = f'{bin_path}:{current_path}' if current_path else str(bin_path)
+
+        code_path = target_root / 'code'
+        if code_path.exists():
+            code_path_str = str(code_path)
+            if code_path_str not in sys.path:
+                sys.path.insert(0, code_path_str)
+
+        # Update module-level constants that cache runtime paths
+        try:
+            from openhands.runtime.utils import git_handler
+
+            git_handler.GIT_CHANGES_CMD = git_handler.GIT_CHANGES_CMD.replace(
+                '/openhands', str(target_root)
+            )
+            git_handler.GIT_DIFF_CMD = git_handler.GIT_DIFF_CMD.replace(
+                '/openhands', str(target_root)
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception('Failed to update git handler commands after runtime relocation.')
+
+        logger.info(
+            'Relocated /openhands runtime root to writable directory %s.', target_root
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error('Failed to relocate runtime root to %s: %s', target_root, exc)
+        raise
+
+
+def _prepare_writable_home_for_readonly_root() -> None:
+    flag = os.environ.get('KUBERNETES_READ_ONLY_ROOT_FILESYSTEM', '')
+    if flag.strip().lower() not in _TRUTHY:
+        return
+
+    target_home = Path('/tmp/openhands-home')
+    source_home = Path('/home/openhands')
+
+    try:
+        if target_home.exists():
+            shutil.rmtree(target_home)
+
+        if source_home.exists():
+            shutil.copytree(source_home, target_home, symlinks=True)
+        else:
+            target_home.mkdir(parents=True, exist_ok=True)
+
+        os.environ['HOME'] = str(target_home)
+        os.environ.setdefault('USERPROFILE', str(target_home))
+        os.environ['RUNTIME_WRITABLE_HOME'] = str(target_home)
+        logger.info(
+            'Relocated HOME to writable directory %s due to read-only root filesystem.',
+            target_home,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            'Failed to relocate HOME to writable directory at %s: %s',
+            target_home,
+            exc,
+        )
+        raise
+
 
 def verify_api_key(api_key: str = Depends(api_key_header)):
     if SESSION_API_KEY and api_key != SESSION_API_KEY:
@@ -675,6 +775,9 @@ if __name__ == '__main__':
 
     # example: python client.py 8000 --working-dir /workspace --plugins JupyterRequirement
     args = parser.parse_args()
+
+    _prepare_writable_runtime_root()
+    _prepare_writable_home_for_readonly_root()
 
     # Start the file viewer server in a separate thread
     logger.info('Starting file viewer server')

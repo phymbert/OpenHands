@@ -10,17 +10,8 @@ from openhands.events.action import Action, IPythonRunCellAction
 from openhands.events.observation import IPythonRunCellObservation
 from openhands.runtime.plugins.jupyter.execute_server import JupyterKernel
 from openhands.runtime.plugins.requirement import Plugin, PluginRequirement
-from openhands.runtime.utils import find_available_tcp_port
+from openhands.runtime.utils import find_available_tcp_port, runtime_path
 from openhands.utils.shutdown_listener import should_continue
-
-SU_TO_USER = os.getenv('SU_TO_USER', 'true').lower() in (
-    '1',
-    'true',
-    't',
-    'yes',
-    'y',
-    'on',
-)
 
 
 @dataclass
@@ -42,18 +33,34 @@ class JupyterPlugin(Plugin):
         self.kernel_id = kernel_id
         is_local_runtime = os.environ.get('LOCAL_RUNTIME_MODE') == '1'
         is_windows = sys.platform == 'win32'
+        allow_privilege_escalation_disabled = (
+            os.environ.get('KUBERNETES_ALLOW_PRIVILEGE_ESCALATION', '')
+            .strip()
+            .lower()
+            in {'false', '0', 'no', 'off'}
+        )
+        writable_home_override = os.environ.get('RUNTIME_WRITABLE_HOME')
 
+        prefix = ''
         if not is_local_runtime:
-            # Non-LocalRuntime
-            prefix = f'su - {username} -s ' if SU_TO_USER else ''
+            if allow_privilege_escalation_disabled:
+                logger.debug(
+                    'Kubernetes allow_privilege_escalation=false detected; skipping `su` for Jupyter plugin.'
+                )
+            else:
+                # Non-LocalRuntime
+                prefix = f'su - {username} -s '
             # cd to code repo, setup all env vars and run micromamba
-            poetry_prefix = (
-                'cd /openhands/code\n'
-                'export POETRY_VIRTUALENVS_PATH=/openhands/poetry;\n'
-                'export PYTHONPATH=/openhands/code:$PYTHONPATH;\n'
-                'export MAMBA_ROOT_PREFIX=/openhands/micromamba;\n'
-                '/openhands/micromamba/bin/micromamba run -n openhands '
-            )
+            env_lines = [
+                f'cd {runtime_path("code")}',
+                f'export POETRY_VIRTUALENVS_PATH={runtime_path("poetry")};',
+                f'export PYTHONPATH={runtime_path("code")}:$PYTHONPATH;',
+                f'export MAMBA_ROOT_PREFIX={runtime_path("micromamba")};',
+            ]
+            if writable_home_override:
+                env_lines.append(f'export HOME={writable_home_override}')
+            poetry_prefix = '\n'.join(env_lines) + '\n'
+            poetry_prefix += f'{runtime_path("micromamba", "bin", "micromamba")} run -n openhands '
         else:
             # LocalRuntime
             prefix = ''
